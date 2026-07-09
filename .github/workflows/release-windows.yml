@@ -211,3 +211,83 @@ jobs:
             ${{ steps.release.outputs.blockmap_path }}
             ${{ steps.release.outputs.latest_path }}
             ${{ steps.release.outputs.sums_path }}
+
+      - name: Publish update feed to VPS
+        shell: pwsh
+        env:
+          DEPLOY_HOST: ${{ secrets.STORYDEX_DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.STORYDEX_DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.STORYDEX_DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.STORYDEX_DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.STORYDEX_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.STORYDEX_DEPLOY_KNOWN_HOSTS }}
+          SETUP_NAME: ${{ steps.metadata.outputs.setup_name }}
+          BLOCKMAP_NAME: ${{ steps.metadata.outputs.blockmap_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+          foreach ($name in @("DEPLOY_HOST","DEPLOY_PORT","DEPLOY_USER","DEPLOY_PATH","DEPLOY_SSH_KEY")) {
+            if (-not (Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value) {
+              throw "Missing required secret: $name"
+            }
+          }
+
+          $sshDir = Join-Path $env:RUNNER_TEMP "storydex-deploy-ssh"
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          $keyPath = Join-Path $sshDir "id_deploy"
+          $knownHostsPath = Join-Path $sshDir "known_hosts"
+
+          # Write private key with LF line endings (OpenSSH requires it).
+          $keyText = $env:DEPLOY_SSH_KEY -replace "`r`n", "`n"
+          if (-not $keyText.EndsWith("`n")) { $keyText += "`n" }
+          [System.IO.File]::WriteAllText($keyPath, $keyText, (New-Object System.Text.UTF8Encoding($false)))
+
+          # Lock down key permissions so ssh does not refuse it.
+          icacls $keyPath /inheritance:r | Out-Null
+          icacls $keyPath /grant:r "$($env:USERNAME):(R)" | Out-Null
+
+          $port = $env:DEPLOY_PORT
+          if (-not $port) { $port = "22" }
+
+          # Host key verification: use pinned known_hosts if provided, else accept-new.
+          if ($env:DEPLOY_KNOWN_HOSTS) {
+            $khText = $env:DEPLOY_KNOWN_HOSTS -replace "`r`n", "`n"
+            [System.IO.File]::WriteAllText($knownHostsPath, $khText, (New-Object System.Text.UTF8Encoding($false)))
+            $hostKeyOpts = @("-o", "UserKnownHostsFile=$knownHostsPath", "-o", "StrictHostKeyChecking=yes")
+          } else {
+            $hostKeyOpts = @("-o", "UserKnownHostsFile=$knownHostsPath", "-o", "StrictHostKeyChecking=accept-new")
+          }
+
+          $sshCommon = @("-i", $keyPath, "-P", $port) + $hostKeyOpts
+          $target = "$($env:DEPLOY_USER)@$($env:DEPLOY_HOST)"
+          $remoteDir = $env:DEPLOY_PATH.TrimEnd("/")
+
+          $files = @(
+            @{ local = "release-assets/$($env:SETUP_NAME)";     remote = $env:SETUP_NAME },
+            @{ local = "release-assets/$($env:BLOCKMAP_NAME)";  remote = $env:BLOCKMAP_NAME },
+            @{ local = "release-assets/latest.yml";             remote = "latest.yml" }
+          )
+
+          foreach ($f in $files) {
+            if (-not (Test-Path -LiteralPath $f.local)) {
+              throw "Release asset not found for upload: $($f.local)"
+            }
+          }
+
+          # Ensure remote directory exists.
+          $sshArgs = @("-i", $keyPath, "-p", $port) + $hostKeyOpts + @($target, "mkdir -p '$remoteDir'")
+          & ssh @sshArgs
+          if ($LASTEXITCODE -ne 0) { throw "Failed to ensure remote directory: $remoteDir" }
+
+          # Upload latest.yml LAST so it never points to a not-yet-uploaded installer.
+          foreach ($f in @($files[0], $files[1], $files[2])) {
+            $scpArgs = @("-i", $keyPath, "-P", $port) + $hostKeyOpts + @($f.local, "$target`:$remoteDir/$($f.remote)")
+            Write-Host "Uploading $($f.local) -> $remoteDir/$($f.remote)"
+            & scp @scpArgs
+            if ($LASTEXITCODE -ne 0) { throw "Upload failed for $($f.local)" }
+          }
+
+          Remove-Item -LiteralPath $keyPath -Force -ErrorAction SilentlyContinue
+          Write-Host "Update feed published to $target`:$remoteDir"

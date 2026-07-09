@@ -1469,7 +1469,7 @@ async function writeClipboard(text: string): Promise<void> {
 
 .tree-inline-create-input {
   height: 26px;
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 0 8px;
   font-size: 13px;
 }

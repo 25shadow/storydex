@@ -462,7 +462,7 @@ function handleOpenAbout(): void {
   border: 0;
   background: transparent;
   padding: 0 4px 0 0;
-  border-radius: 10px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 180ms ease, box-shadow 180ms ease;
 }
@@ -471,22 +471,17 @@ function handleOpenAbout(): void {
   background: color-mix(in srgb, var(--bg-hover) 65%, transparent);
 }
 
-.topbar-brand-switch:hover .topbar-brand-name,
-.topbar-brand-switch:focus-visible .topbar-brand-name {
-  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 38%, transparent);
-}
-
 .topbar-brand-switch:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .header-utility-btn {
-  min-width: 30px;
-  height: 30px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+  min-width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--text-soft);
   display: inline-flex;
   align-items: center;
@@ -531,7 +526,7 @@ function handleOpenAbout(): void {
 .activity-account-badge {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   background: var(--accent-soft);

@@ -1593,7 +1593,7 @@ function formatTokenCount(value: number): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--text-muted);
 }
 
@@ -1606,8 +1606,8 @@ function formatTokenCount(value: number): string {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
+  padding: 3px 8px;
+  border-radius: 4px;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-main) 6%, transparent);
   font-size: 11px;
@@ -1665,7 +1665,7 @@ function formatTokenCount(value: number): string {
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--border-ghost);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--bg-input) 72%, transparent);
   color: var(--text-soft);
   font-size: 12px;
@@ -1812,7 +1812,7 @@ function formatTokenCount(value: number): string {
   overflow: auto;
   background: var(--bg-card-muted);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 11px;
 }
@@ -1993,7 +1993,7 @@ function formatTokenCount(value: number): string {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2138,7 +2138,7 @@ function formatTokenCount(value: number): string {
   gap: 6px;
   padding: 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-input);
   box-shadow: var(--shadow-popover);
 }
@@ -2196,7 +2196,7 @@ function formatTokenCount(value: number): string {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--bg-input) 86%, black);
   color: var(--text-main);
   font: inherit;
@@ -2232,7 +2232,7 @@ function formatTokenCount(value: number): string {
   gap: 3px;
   padding: 8px 9px;
   border: 1px solid var(--border-ghost);
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   font: inherit;
@@ -2353,7 +2353,7 @@ function formatTokenCount(value: number): string {
   overflow: auto;
   padding: 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-card-muted);
 }
 
@@ -2399,7 +2399,7 @@ function formatTokenCount(value: number): string {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-input);
   background-color: var(--bg-input);
   backdrop-filter: none;
@@ -2458,7 +2458,7 @@ function formatTokenCount(value: number): string {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2493,7 +2493,7 @@ function formatTokenCount(value: number): string {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2593,7 +2593,7 @@ function formatTokenCount(value: number): string {
   max-height: 120px;
   resize: vertical;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 8px 9px;
   background: color-mix(in srgb, var(--bg-input) 88%, black);
   color: var(--text-main);
@@ -2618,7 +2618,7 @@ function formatTokenCount(value: number): string {
   min-width: 64px;
   height: 30px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   font: inherit;
@@ -2652,7 +2652,7 @@ function formatTokenCount(value: number): string {
   gap: 10px;
   padding: 8px 10px 8px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--bg-input);
   overflow: visible;
 }
@@ -2676,7 +2676,7 @@ function formatTokenCount(value: number): string {
   height: 14px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
   pointer-events: auto;
@@ -2739,7 +2739,7 @@ function formatTokenCount(value: number): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--text-main);
   transition:

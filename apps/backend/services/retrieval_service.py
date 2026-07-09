@@ -20,16 +20,21 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
-from core.bounded_text_io import read_text_limited
+from core.bounded_text_io import read_text_limited, read_text_preview
+from services.storydex_retrieval import _build_snippet, tokenize
 
 logger = logging.getLogger(__name__)
 
 INDEXABLE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml"}
-DEFAULT_INDEX_REL = ".storydex/.cache/retrieval.fts5.db"
+# v2：入库内容改为中文 bigram/trigram token 流（FTS5 unicode61 对连续中文
+# 只切出整段 token，原始内容直接入库时中文检索基本失效）。schema 不兼容，
+# 换文件名让旧库自然废弃。
+DEFAULT_INDEX_REL = ".storydex/.cache/retrieval.fts5.v2.db"
 FTS5_INDEX_CHAR_LIMIT = 120_000
+MAX_QUERY_TOKENS = 24
 
 _SCHEMA = """
-CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(content, path UNINDEXED, tokenize='unicode61');
+CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(tokens, path UNINDEXED, tokenize='unicode61');
 CREATE TABLE IF NOT EXISTS doc_meta (
     path TEXT PRIMARY KEY,
     mtime REAL NOT NULL,
@@ -93,7 +98,7 @@ class RetrievalService:
                     continue
                 text, size, mtime = indexed
                 rel = str(p.relative_to(self.project_root)).replace("\\", "/")
-                conn.execute("INSERT INTO docs(content, path) VALUES(?, ?)", (text, rel))
+                conn.execute("INSERT INTO docs(tokens, path) VALUES(?, ?)", (self._tokenized(text), rel))
                 conn.execute(
                     "INSERT OR REPLACE INTO doc_meta(path, mtime, indexed_at, size) VALUES(?, ?, ?, ?)",
                     (rel, mtime, now, size),
@@ -110,8 +115,10 @@ class RetrievalService:
             }
             updated = 0
             now = time.time()
+            seen_paths: set[str] = set()
             for p in self._candidate_files():
                 rel = str(p.relative_to(self.project_root)).replace("\\", "/")
+                seen_paths.add(rel)
                 try:
                     stat = p.stat()
                 except OSError:
@@ -124,15 +131,23 @@ class RetrievalService:
                     continue
                 text, size, _mtime = indexed
                 conn.execute("DELETE FROM docs WHERE path=?", (rel,))
-                conn.execute("INSERT INTO docs(content, path) VALUES(?, ?)", (text, rel))
+                conn.execute("INSERT INTO docs(tokens, path) VALUES(?, ?)", (self._tokenized(text), rel))
                 conn.execute(
                     "INSERT OR REPLACE INTO doc_meta(path, mtime, indexed_at, size) VALUES(?, ?, ?, ?)",
                     (rel, mtime, now, size),
                 )
                 updated += 1
+            for rel in set(existing) - seen_paths:
+                conn.execute("DELETE FROM docs WHERE path=?", (rel,))
+                conn.execute("DELETE FROM doc_meta WHERE path=?", (rel,))
+                updated += 1
             return updated
 
     # ─────────────────── 检索 ───────────────────
+
+    @staticmethod
+    def _tokenized(text: str) -> str:
+        return " ".join(tokenize(text))
 
     @staticmethod
     def _read_indexable_text(path: Path, *, stat: Any | None = None) -> tuple[str, int, float] | None:
@@ -149,12 +164,13 @@ class RetrievalService:
         """返回 (path, score, snippet)。score 越小越相关（FTS5 bm25）。"""
         if not query or not query.strip():
             return []
+        query_tokens = tokenize(query)[:MAX_QUERY_TOKENS]
+        if not query_tokens:
+            return []
+        match_expr = " OR ".join(f'"{token}"' for token in query_tokens)
         with self._lock, self._connect() as conn:
-            sql = (
-                "SELECT path, bm25(docs) AS score, snippet(docs, 0, '[', ']', '...', 16) AS snip "
-                "FROM docs WHERE docs MATCH ?"
-            )
-            params: List = [self._sanitize_query(query)]
+            sql = "SELECT path, bm25(docs) AS score FROM docs WHERE docs MATCH ?"
+            params: List = [match_expr]
             if path_prefix:
                 sql += " AND path LIKE ?"
                 params.append(f"{path_prefix}%")
@@ -170,17 +186,18 @@ class RetrievalService:
             path = str(row["path"] or "")
             if self._is_runtime_path(tuple(Path(path).parts)):
                 continue
-            results.append((path, float(row["score"] or 0.0), str(row["snip"] or "")))
+            # tokens 列是 bigram 流，FTS5 自带 snippet 不可读；从原文生成摘录。
+            snippet = ""
+            try:
+                snippet = _build_snippet(read_text_preview(self.project_root / path, max_chars=4000), query_tokens)
+            except Exception:
+                snippet = ""
+            results.append((path, float(row["score"] or 0.0), snippet))
         return results
 
     @staticmethod
-    def _sanitize_query(query: str) -> str:
-        # FTS5 把空格视作 AND；引号包起单 token 避免特殊符号触发语法错
-        terms = [t for t in query.replace('"', " ").split() if t]
-        return " ".join(f'"{t}"' for t in terms) if terms else "\"\""
-
-    @staticmethod
     def _is_runtime_path(relative_parts: Tuple[str, ...]) -> bool:
+        """运行时数据与生成物不入检索：Agent 查 WIKI 走 StorydexWikiQuery。"""
         if len(relative_parts) < 2 or relative_parts[0] != ".storydex":
             return False
         return relative_parts[1] in {
@@ -194,6 +211,7 @@ class RetrievalService:
             "temp",
             "trace",
             "traces",
+            "wiki",
         }
 
 

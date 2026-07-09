@@ -732,7 +732,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 .system-settings-window {
   width: min(1240px, calc(100vw - 28px));
   height: min(820px, calc(100vh - 28px));
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   box-shadow: var(--shadow-md);
@@ -776,7 +776,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
   width: 32px;
   height: 32px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-soft);
   display: inline-grid;
@@ -801,7 +801,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 
 .system-settings-search {
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   display: inline-flex;
@@ -870,7 +870,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
   min-height: 32px;
   padding: 0 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-main);
   font: inherit;
@@ -908,7 +908,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
   min-height: 34px;
   padding: 0 9px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-soft);
   display: inline-flex;
@@ -955,7 +955,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 .system-settings-empty {
   min-height: 220px;
   border: 1px dashed var(--border-subtle);
-  border-radius: 16px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   color: var(--text-muted);
@@ -1045,7 +1045,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 
 .theme-option {
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-input);
   padding: 8px;
   display: flex;
@@ -1067,7 +1067,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 .theme-option-preview {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 90%, white 10%);
   flex-shrink: 0;
 }
@@ -1097,10 +1097,10 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 }
 
 .mode-switch-btn {
-  min-height: 34px;
+  min-height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
@@ -1152,10 +1152,10 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 
 .system-settings-input {
   width: 100%;
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--bg-card) 90%, transparent);
   color: var(--text-main);
   outline: none;
@@ -1163,7 +1163,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 
 .system-settings-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .system-settings-project-meta-bar {
@@ -1173,7 +1173,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
   gap: 6px 14px;
   padding: 8px 10px;
   border: 1px solid var(--border-ghost);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-input);
   color: var(--text-muted);
   font-size: 12px;
@@ -1191,7 +1191,7 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 .system-settings-empty-inline {
   min-height: 48px;
   border: 1px dashed var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   color: var(--text-muted);
@@ -1274,17 +1274,17 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
 
 .system-settings-primary-btn,
 .system-settings-secondary-btn {
-  min-height: 36px;
+  min-height: 30px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 4px;
   border: 1px solid var(--border-subtle);
   cursor: pointer;
 }
 
 .system-settings-primary-btn {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--border-subtle));
-  color: var(--accent-strong);
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-contrast);
 }
 
 .system-settings-secondary-btn {
@@ -1292,7 +1292,10 @@ function sectionMatches(section: SettingsSection, query: string): boolean {
   color: var(--text-soft);
 }
 
-.system-settings-primary-btn:hover:not(:disabled),
+.system-settings-primary-btn:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
 .system-settings-secondary-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-main);

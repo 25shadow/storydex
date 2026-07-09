@@ -1,9 +1,9 @@
 :root {
   --header-height: 56px;
   --footer-height: 30px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
   --font-ui: "IBM Plex Sans", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
   --font-prose: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
   --font-mono: "Cascadia Mono", "IBM Plex Mono", "Consolas", monospace;
@@ -347,7 +347,7 @@ body.is-resizing-panels .workspace-splitter::before {
   height: 40px;
   display: grid;
   place-items: center;
-  border-radius: 14px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   color: var(--accent);
   background: linear-gradient(135deg, var(--accent-soft), rgba(255, 255, 255, 0.08));
@@ -398,7 +398,7 @@ body.is-resizing-panels .workspace-splitter::before {
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-main);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 8px 12px;
   display: inline-flex;
   align-items: center;
@@ -414,7 +414,7 @@ body.is-resizing-panels .workspace-splitter::before {
 }
 
 .header-pill {
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   padding: 7px 12px;
   font-size: 12px;
@@ -435,7 +435,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .theme-select,
 .compact-select,
 .modal-input {
-  border-radius: 12px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-main);
@@ -449,7 +449,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .doc-editor:focus,
 .agent-composer:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .file-menu-card {
@@ -499,7 +499,7 @@ body.is-resizing-panels .workspace-splitter::before {
   gap: 10px;
   padding: 10px 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 6px;
   text-align: left;
   background: transparent;
   color: var(--text-main);
@@ -533,7 +533,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .modal-card {
   width: min(520px, calc(100vw - 32px));
   padding: 18px;
-  border-radius: 22px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   box-shadow: var(--shadow-md);
@@ -583,7 +583,7 @@ body.is-resizing-panels .workspace-splitter::before {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card-muted);
   color: var(--text-main);
@@ -621,7 +621,7 @@ body.is-resizing-panels .workspace-splitter::before {
   width: 40px;
   height: 40px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 6px;
   background: transparent;
   color: var(--activity-icon);
   display: grid;
@@ -755,7 +755,7 @@ body.is-resizing-panels .workspace-splitter::before {
   gap: 8px;
   padding-right: 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-main);
   text-align: left;
@@ -805,7 +805,7 @@ body.is-resizing-panels .workspace-splitter::before {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px;
-  border-radius: 16px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   box-shadow: var(--shadow-md);
@@ -819,7 +819,7 @@ body.is-resizing-panels .workspace-splitter::before {
   min-height: 36px;
   padding: 8px 12px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-main);
   text-align: left;
@@ -859,7 +859,7 @@ body.is-resizing-panels .workspace-splitter::before {
   min-width: 0;
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-main);
@@ -868,13 +868,13 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .tree-inline-create-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .tree-inline-create-btn {
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: var(--accent-contrast);
@@ -913,7 +913,7 @@ body.is-resizing-panels .workspace-splitter::before {
   padding: 0 12px;
   border: 1px solid transparent;
   border-bottom: 0;
-  border-radius: 12px 12px 0 0;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -949,7 +949,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .editor-tab-close {
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: 6px;
   color: var(--text-faint);
 }
 
@@ -974,7 +974,7 @@ body.is-resizing-panels .workspace-splitter::before {
   place-items: center;
   text-align: center;
   padding: 32px;
-  border-radius: 22px;
+  border-radius: 6px;
   border: 1px dashed var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-muted);
@@ -993,7 +993,7 @@ body.is-resizing-panels .workspace-splitter::before {
   position: relative;
   overflow: hidden;
   padding: 30px 32px;
-  border-radius: 30px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background:
     radial-gradient(circle at 12% 18%, var(--accent-soft), transparent 30%),
@@ -1006,7 +1006,7 @@ body.is-resizing-panels .workspace-splitter::before {
   content: "";
   position: absolute;
   inset: 14px;
-  border-radius: 22px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   pointer-events: none;
 }
@@ -1065,7 +1065,7 @@ body.is-resizing-panels .workspace-splitter::before {
   min-height: 48px;
   padding: 0 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--text-main);
   display: inline-flex;
@@ -1103,7 +1103,7 @@ body.is-resizing-panels .workspace-splitter::before {
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.64);
   color: var(--text-soft);
@@ -1133,7 +1133,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .welcome-card {
   min-width: 0;
   padding: 20px;
-  border-radius: 24px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
@@ -1170,7 +1170,7 @@ body.is-resizing-panels .workspace-splitter::before {
   width: 100%;
   padding: 16px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: 6px;
   background: linear-gradient(180deg, var(--bg-card), var(--bg-card-muted));
   color: var(--text-main);
   display: flex;
@@ -1207,7 +1207,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .welcome-empty {
   margin-top: 18px;
   padding: 16px 18px;
-  border-radius: 18px;
+  border-radius: 6px;
   border: 1px dashed var(--border-subtle);
   background: var(--bg-card-muted);
   color: var(--text-muted);
@@ -1218,7 +1218,7 @@ body.is-resizing-panels .workspace-splitter::before {
   width: 100%;
   padding: 16px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: 6px;
   background: var(--bg-card);
   color: var(--text-main);
   display: grid;
@@ -1249,7 +1249,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .welcome-practice-card {
   min-height: 180px;
   padding: 18px;
-  border-radius: 20px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background:
     linear-gradient(180deg, var(--bg-card), var(--bg-card-muted)),
@@ -1263,7 +1263,7 @@ body.is-resizing-panels .workspace-splitter::before {
   align-items: center;
   min-height: 24px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-size: 11px;
@@ -1289,7 +1289,7 @@ body.is-resizing-panels .workspace-splitter::before {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-subtle);
-  border-radius: 22px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
@@ -1335,7 +1335,7 @@ body.is-resizing-panels .workspace-splitter::before {
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border-radius: 6px;
+  border-radius: 4px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card-muted);
 }
@@ -1449,7 +1449,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .doc-markdown code {
   padding: 0.15em 0.4em;
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-code);
   font-size: 0.92em;
 }
@@ -1457,7 +1457,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .doc-markdown pre {
   overflow: auto;
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: 6px;
   background: var(--bg-code);
 }
 
@@ -1539,7 +1539,7 @@ body.is-resizing-panels .workspace-splitter::before {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-soft);
@@ -1575,7 +1575,7 @@ body.is-resizing-panels .workspace-splitter::before {
   background: var(--bg-card);
   color: var(--text-muted);
   padding: 9px 14px;
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1891,7 +1891,7 @@ body.is-resizing-panels .workspace-splitter::before {
   background: var(--bg-card);
   color: var(--text-soft);
   padding: 9px 12px;
-  border-radius: 14px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -2010,7 +2010,7 @@ body.is-resizing-panels .workspace-splitter::before {
   min-height: 68px;
   max-height: 108px;
   resize: none;
-  border-radius: 10px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-main);
@@ -2046,7 +2046,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .btn {
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 9px 14px;
   font-size: 12px;
   font-weight: 700;
@@ -2084,7 +2084,7 @@ body.is-resizing-panels .workspace-splitter::before {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card-muted);
   font-size: 12px;
@@ -2872,7 +2872,7 @@ body.is-resizing-panels .workspace-splitter::before {
 @media (max-width: 720px) {
   .welcome-hero {
     padding: 24px;
-    border-radius: 24px;
+    border-radius: 6px;
   }
 
   .welcome-hero-body {
@@ -3447,7 +3447,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .editor-mode-switch {
   border: 1px solid #3c3c3c;
-  border-radius: 6px;
+  border-radius: 4px;
   background: #1f1f1f;
 }
 
@@ -3728,9 +3728,9 @@ body.is-resizing-panels .workspace-splitter::before {
 :root {
   --header-height: 38px;
   --footer-height: 24px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
 
   --bg-app: #eef2f7;
   --bg-header: rgba(250, 252, 255, 0.94);
@@ -4059,7 +4059,7 @@ body.is-resizing-panels .workspace-splitter::before {
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   display: inline-flex;
@@ -4099,7 +4099,7 @@ body.is-resizing-panels .workspace-splitter::before {
   gap: 8px;
   padding: 0 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-input);
   color: var(--text-muted);
 }
@@ -4123,7 +4123,7 @@ body.is-resizing-panels .workspace-splitter::before {
   width: 300px;
   padding: 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--bg-sidebar);
   box-shadow: var(--shadow-md);
 }
@@ -4156,7 +4156,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .file-menu-item {
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
 }
 
@@ -4171,7 +4171,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .modal-card {
   padding: 18px;
-  border-radius: 12px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   box-shadow: var(--shadow-md);
@@ -4194,7 +4194,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .theme-select {
   min-height: 34px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-input);
   color: var(--text-main);
   box-shadow: none;
@@ -4212,7 +4212,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .btn,
 .modal-actions .btn {
-  border-radius: 6px;
+  border-radius: 4px;
   box-shadow: none;
 }
 
@@ -4288,7 +4288,7 @@ body.is-resizing-panels .workspace-splitter::before {
   padding: 10px;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 6px;
   box-shadow: var(--shadow-md);
   z-index: 130;
 }
@@ -4316,7 +4316,7 @@ body.is-resizing-panels .workspace-splitter::before {
   gap: 10px;
   padding: 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   text-align: left;
@@ -4416,7 +4416,7 @@ body.is-resizing-panels .workspace-splitter::before {
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   display: grid;
@@ -4470,7 +4470,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .sidebar-action {
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-soft);
   box-shadow: none;
@@ -4531,7 +4531,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .tree-inline-create-input {
   height: 32px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-input);
   color: var(--text-main);
 }
@@ -4539,7 +4539,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .tree-inline-create-btn {
   height: 32px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: 4px;
   border: 1px solid transparent;
   background: var(--accent);
   color: var(--accent-contrast);
@@ -4558,7 +4558,7 @@ body.is-resizing-panels .workspace-splitter::before {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  border-radius: 10px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
   box-shadow: var(--shadow-md);
@@ -4567,7 +4567,7 @@ body.is-resizing-panels .workspace-splitter::before {
 .context-menu-item {
   min-height: 34px;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--text-main);
 }
 
@@ -4669,7 +4669,7 @@ body.is-resizing-panels .workspace-splitter::before {
 
 .editor-mode-switch {
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-input);
 }
 
@@ -4803,7 +4803,7 @@ body.is-resizing-panels .workspace-splitter::before {
   padding: 12px 14px 12px 16px;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-ghost);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -5213,7 +5213,7 @@ body.is-resizing-panels .workspace-splitter::before {
   gap: 2px;
   padding: 9px 12px 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-main);
   text-align: left;
@@ -5402,4 +5402,95 @@ body.is-resizing-panels .workspace-splitter::before {
   .welcome-columns {
     gap: 44px;
   }
+}
+
+/* ============================================================
+   Storydex 视觉收敛层 v2（追加层，最后生效）
+   基调：VS Code 式的克制密度 + Storydex 的暖色主张。
+   规则：
+   - 圆角三档：4px 标签徽章 / 6px 按钮输入 / 8px 卡片浮层，10px 仅限大窗口
+   - 阴影仅用于浮层（菜单/弹窗），贴边短投影，不用漂浮光晕
+   - 悬停反馈一律用背景/边框变化，禁止位移和发光
+   ============================================================ */
+
+:root {
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.1);
+  --shadow-md: 0 6px 20px rgba(15, 23, 42, 0.16);
+  --shadow-popover: 0 4px 16px rgba(15, 23, 42, 0.14);
+}
+
+[data-theme="dark"] {
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+/* 顶栏与浮动底栏改为实底，去掉毛玻璃 */
+.top-header,
+.agent-shell-footer {
+  backdrop-filter: none;
+}
+
+/* 按钮：紧凑、无位移悬停 */
+.btn {
+  padding: 5px 12px;
+  font-weight: 600;
+}
+
+.btn:hover:not(:disabled),
+.header-action:hover:not(:disabled),
+.sidebar-action:hover:not(:disabled),
+.file-menu-trigger:hover,
+.agent-tab-btn:hover:not(:disabled),
+.mode-pill:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn.btn-primary:hover:not(:disabled),
+.btn.btn-run:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+/* Trace 徽章：药丸 → 方角小标签 */
+.trace-badge,
+.trace-history-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+}
+
+/* Markdown 代码块圆角收敛 */
+.doc-markdown code {
+  border-radius: 4px;
+}
+
+.doc-markdown pre {
+  border-radius: 4px;
+}
+
+/* 浮层圆角统一 8px */
+.file-menu-card,
+.activity-settings-menu,
+.explorer-context-menu,
+.modal-card {
+  border-radius: 6px;
+}
+
+/* 保持纯白主题的完全扁平（收敛层令牌不回加阴影） */
+[data-theme="white"] {
+  --shadow-sm: none;
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-popover: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+/* 收敛层 v3：弹窗遮罩纯色调暗，不再模糊背景 */
+.modal-mask,
+.preset-editor-overlay {
+  backdrop-filter: none;
 }

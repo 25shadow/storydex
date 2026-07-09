@@ -136,7 +136,7 @@ def test_read_or_build_rebuilds_old_category_schema_payload(tmp_path):
 
     payload = StoryWikiService().read_or_build(tmp_path)
 
-    assert payload["categorySchemaVersion"] == "story-wiki-v3-entity-source"
+    assert payload["categorySchemaVersion"] == "story-wiki-v4-stable-chapter-ids"
     assert not any(node["id"] == "stale:node" for node in payload["graph"]["nodes"])
     assert payload["sourceStats"]["chapterFiles"] == 1
 
@@ -173,3 +173,78 @@ def test_sync_local_incremental_replaces_fact_edges_when_facts_change(tmp_path):
 
     fact_labels = [edge["label"] for edge in updated["graph"]["edges"] if edge["type"] == "fact"]
     assert fact_labels == ["交还"]
+
+
+def test_sync_local_incremental_keeps_chapter_entries_stable_when_inserting(tmp_path):
+    chapters = tmp_path / "chapters"
+    chapters.mkdir()
+    chapters.joinpath("001.md").write_text("第一章：沈青出发。\n", encoding="utf-8")
+    chapters.joinpath("003.md").write_text("第三章：沈青抵达云桥。\n", encoding="utf-8")
+    service = StoryWikiService()
+
+    initial = service.rebuild(tmp_path)
+    initial_titles = {
+        entry["id"]: entry["sourcePaths"]
+        for entry in initial["entries"]
+        if str(entry["id"]).startswith("chapter:")
+    }
+    assert len(initial_titles) == 2
+
+    # 在两章之间插入新章节：旧实现按排序位置命名 chapter ID，
+    # 会让新章顶掉 003 的条目并导致内容错位。
+    chapters.joinpath("002.md").write_text("第二章：沈青夜宿荒村。\n", encoding="utf-8")
+    updated = service.sync_local_incremental(tmp_path)
+
+    chapter_entries = {
+        entry["id"]: entry
+        for entry in updated["entries"]
+        if str(entry["id"]).startswith("chapter:")
+    }
+    assert len(chapter_entries) == 3
+    by_source = {
+        tuple(entry["sourcePaths"]): entry["id"]
+        for entry in chapter_entries.values()
+    }
+    assert ("chapters/001.md",) in by_source
+    assert ("chapters/002.md",) in by_source
+    assert ("chapters/003.md",) in by_source
+    # 每个章节的条目摘要必须与自身内容一致，未变更章节不被新章覆盖。
+    for entry in chapter_entries.values():
+        source = entry["sourcePaths"][0]
+        if source.endswith("001.md"):
+            assert "出发" in entry["summary"]
+        elif source.endswith("002.md"):
+            assert "夜宿荒村" in entry["summary"]
+        elif source.endswith("003.md"):
+            assert "云桥" in entry["summary"]
+
+
+def test_dedupe_edges_evicts_by_weight_over_limit():
+    from services.story_wiki_service import MAX_WIKI_GRAPH_EDGES
+
+    service = StoryWikiService()
+    edges = []
+    for index in range(MAX_WIKI_GRAPH_EDGES + 50):
+        edges.append(
+            {
+                "source": f"a{index}",
+                "target": f"b{index}",
+                "label": "共现",
+                "type": "relationship",
+                "weight": 1,
+                "coOccurrence": True,
+            }
+        )
+    heavy = {
+        "source": "hero",
+        "target": "rival",
+        "label": "宿敌",
+        "type": "relationship",
+        "weight": 99,
+    }
+    edges.append(heavy)
+
+    result = service._dedupe_edges(edges)
+
+    assert len(result) == MAX_WIKI_GRAPH_EDGES
+    assert any(edge["source"] == "hero" and edge["target"] == "rival" for edge in result)

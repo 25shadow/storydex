@@ -87,7 +87,9 @@ FEATURE_FLAG_DEFAULTS: dict[str, object] = {
     "ASYNC_HOOKS_ENABLED": False,
     "ASYNC_FILE_BACKUP_ENABLED": False,
     "AUTO_COMPACT_ENABLED": False,
-    "CONTEXT_PIPELINE_FTS5": False,
+    # FTS5 混合检索已接入上下文组装（related_passages 块），默认开启；
+    # 项目可通过 .storydex/config/feature-flags.json 关闭。
+    "CONTEXT_PIPELINE_FTS5": True,
     "CONTEXT_LRU_ENABLED": False,
     "CONTEXT_TOKEN_BUDGET_REAL": False,
     "MEMORY_LAYER_V2": False,

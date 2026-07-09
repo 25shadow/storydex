@@ -702,7 +702,7 @@ async function handleUsernameBlur(): Promise<void> {
 .activity-account-tab {
   min-height: 32px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   cursor: pointer;

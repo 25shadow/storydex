@@ -84,18 +84,18 @@ function getToolProgress(toolId: string): string | undefined {
 
 <style scoped>
 .message-bubble {
-  margin: 12px 0;
-  padding: 12px 16px;
-  border-radius: 12px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 6px;
   max-width: 100%;
 }
 .role-user {
   background: var(--color-user-bubble, #e3f2fd);
-  margin-left: 48px;
+  margin-left: 40px;
 }
 .role-assistant {
   background: var(--color-assistant-bubble, #f5f5f5);
-  margin-right: 48px;
+  margin-right: 40px;
 }
 .role-system {
   background: var(--color-surface, #fff3e0);
@@ -115,7 +115,7 @@ function getToolProgress(toolId: string): string | undefined {
   background: var(--color-code-bg, #1e1e1e);
   color: var(--color-code-fg, #d4d4d4);
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow-x: auto;
   font-size: 13px;
 }
@@ -123,7 +123,7 @@ function getToolProgress(toolId: string): string | undefined {
 .thinking-block {
   margin: 4px 0;
   border: 1px dashed var(--color-border, #ccc);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 4px 8px;
 }
 .thinking-block summary {

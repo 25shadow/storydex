@@ -311,7 +311,7 @@ function chatsquashDisplayFields(meta: Record<string, unknown>): Record<string, 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--accent);
   color: var(--accent-contrast);
   font-size: 10px;
@@ -720,7 +720,7 @@ function chatsquashDisplayFields(meta: Record<string, unknown>): Record<string, 
 
 .stip-fold-count {
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-hover);
   color: var(--text-muted);
   font-size: 10px;

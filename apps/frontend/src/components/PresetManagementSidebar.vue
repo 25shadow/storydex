@@ -748,7 +748,7 @@ async function fileToBase64(file: File): Promise<string> {
   gap: 5px;
   padding: 6px 7px;
   border: 1px solid var(--border-ghost);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-elevated, transparent);
   color: var(--text-muted);
   font: inherit;
@@ -907,7 +907,7 @@ async function fileToBase64(file: File): Promise<string> {
 .preset-status-badge {
   flex: 0 0 auto;
   padding: 1px 4px;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--bg-hover);
   color: var(--text-faint);
   font-size: 9px;
@@ -952,7 +952,7 @@ async function fileToBase64(file: File): Promise<string> {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-panel, var(--bg-sidebar));
-  box-shadow: 0 12px 30px rgb(0 0 0 / 0.24);
+  box-shadow: var(--shadow-popover);
 }
 
 .preset-context-menu-item {
@@ -1002,7 +1002,7 @@ async function fileToBase64(file: File): Promise<string> {
   height: min(90vh, 800px);
   background: var(--bg-sidebar);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1013,7 +1013,7 @@ async function fileToBase64(file: File): Promise<string> {
 .preset-import-preview-modal {
   width: min(960px, 96vw);
   height: min(86vh, 720px);
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .preset-editor-close {

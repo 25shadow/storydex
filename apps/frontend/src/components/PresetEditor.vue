@@ -904,14 +904,14 @@ function onRawJsonChange(text: string): void {
   padding: 4px;
   background: var(--bg-elevated, #fff);
   border: 1px solid var(--border-ghost);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .preset-editor-tab {
   min-width: 0;
   padding: 7px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
@@ -942,7 +942,7 @@ function onRawJsonChange(text: string): void {
   background: var(--accent-strong);
   color: var(--text-on-accent, #fff);
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -956,7 +956,7 @@ function onRawJsonChange(text: string): void {
 .preset-editor-ghost-btn {
   padding: 4px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   font-size: 11px;
@@ -973,7 +973,7 @@ function onRawJsonChange(text: string): void {
   padding: 8px 12px;
   background: var(--bg-elevated, #fef2f2);
   color: var(--state-danger, #b91c1c);
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
 }
 
@@ -982,13 +982,13 @@ function onRawJsonChange(text: string): void {
   padding: 8px 12px;
   background: var(--bg-elevated, #fffbeb);
   color: var(--state-warning, #b45309);
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 12px;
 }
 
 .preset-editor-section {
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 8px 12px;
 }
 
@@ -1081,7 +1081,7 @@ function onRawJsonChange(text: string): void {
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--border-ghost);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-elevated, #fff);
 }
 
@@ -1157,7 +1157,7 @@ function onRawJsonChange(text: string): void {
 .preset-module-card,
 .preset-risk-group {
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-elevated, #fff);
 }
 
@@ -1205,7 +1205,7 @@ function onRawJsonChange(text: string): void {
 .preset-editor-chip,
 .preset-section-token {
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--bg-sidebar);
   color: var(--text-muted);
   font-size: 11px;
@@ -1224,7 +1224,7 @@ function onRawJsonChange(text: string): void {
 .preset-editor-empty {
   padding: 16px 12px;
   border: 1px dashed var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.7;
@@ -1278,7 +1278,7 @@ function onRawJsonChange(text: string): void {
 .preset-risk-pill {
   flex: 0 0 auto;
   padding: 3px 7px;
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1310,7 +1310,7 @@ function onRawJsonChange(text: string): void {
   padding: 12px;
   overflow: auto;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-elevated, #fff);
   color: var(--text-main);
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;

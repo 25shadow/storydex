@@ -219,11 +219,11 @@ async function handleSave(): Promise<void> {
 .story-settings-scope {
   display: inline-flex;
   align-items: center;
-  height: 24px;
-  padding: 0 10px;
+  height: 22px;
+  padding: 0 8px;
   color: var(--accent-primary);
   background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 12px;
 }
 

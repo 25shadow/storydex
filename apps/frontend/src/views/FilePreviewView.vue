@@ -666,14 +666,14 @@ function fileNameFromPath(value: string): string {
 .preview-window-tab-dirty {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--accent);
   flex-shrink: 0;
 }
 
 .preview-window-tab-close {
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--text-muted);
   font-size: 16px;
 }
@@ -709,7 +709,7 @@ function fileNameFromPath(value: string): string {
 .preview-window-mode-btn {
   min-height: 26px;
   padding: 0 9px;
-  border-radius: 7px;
+  border-radius: 6px;
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   color: var(--text-soft);
@@ -735,7 +735,7 @@ function fileNameFromPath(value: string): string {
   gap: 6px;
   padding: 3px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--bg-card-muted) 88%, transparent);
 }
 

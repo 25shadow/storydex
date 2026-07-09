@@ -172,6 +172,18 @@
                 </option>
               </select>
             </label>
+
+            <label class="coomi-config-field full">
+              <span>上下文窗口（tokens）</span>
+              <input
+                v-model="form.contextWindow"
+                :disabled="loading || saving"
+                spellcheck="false"
+                inputmode="numeric"
+                placeholder="留空使用默认 256000；按模型实际窗口填写，压缩阈值随之生效"
+                @input="syncProviderFields"
+              />
+            </label>
           </div>
         </section>
       </section>
@@ -224,6 +236,7 @@ interface ProviderForm {
   baseUrl: string;
   model: string;
   fastModel: string;
+  contextWindow: string;
 }
 
 interface ProviderOption {
@@ -549,6 +562,12 @@ function buildProviderRecord(previous: Record<string, unknown>): Record<string, 
   } else {
     delete next.fast_model;
   }
+  const contextWindow = Number.parseInt(form.contextWindow.trim(), 10);
+  if (Number.isFinite(contextWindow) && contextWindow > 0) {
+    next.context_window = contextWindow;
+  } else {
+    delete next.context_window;
+  }
   return next;
 }
 
@@ -580,7 +599,8 @@ function loadForm(providerId: string): void {
     apiKey: asString(provider.api_key) || "",
     baseUrl: asString(provider.base_url) || "",
     model: asString(provider.model) || "",
-    fastModel: asString(provider.fast_model) || ""
+    fastModel: asString(provider.fast_model) || "",
+    contextWindow: provider.context_window ? String(provider.context_window) : ""
   });
 }
 
@@ -628,7 +648,8 @@ function emptyForm(): ProviderForm {
     apiKey: "",
     baseUrl: "",
     model: "",
-    fastModel: ""
+    fastModel: "",
+    contextWindow: ""
   };
 }
 
@@ -719,7 +740,7 @@ function formatDate(value: string): string {
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -861,7 +882,7 @@ function formatDate(value: string): string {
   min-width: 0;
   height: 40px;
   border: 1px solid var(--border-subtle);
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 0 11px;
   background: var(--bg-input);
   color: var(--text-main);
@@ -887,7 +908,7 @@ function formatDate(value: string): string {
   justify-content: center;
   height: 38px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   cursor: pointer;
@@ -907,7 +928,7 @@ function formatDate(value: string): string {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-main);
   cursor: pointer;

@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 from services.storydex_context_assembler_service import StorydexContextAssemblerService, get_storydex_context_assembler_service
+from services.storydex_intent_service import heuristic_intent_frame, is_valid_intent_frame
 from services.story_project_service import StoryProjectService, get_story_project_service
 
 
-_STORY_INTENT_RE = re.compile(
-    r"(续写|写(一|1)?段|写第|生成.*(剧情|故事|章节|片段)|创作.*(剧情|故事)|正文|剧情|章节|片段|story|chapter|scene|continue)",
-    re.IGNORECASE,
-)
-_CHARACTER_INTENT_RE = re.compile(r"(角色|人物|character|cast)", re.IGNORECASE)
-_WIKI_INTENT_RE = re.compile(r"(wiki|知识图谱|知识库|整理设定|整理关系)", re.IGNORECASE)
-_PROJECT_ORGANIZE_RE = re.compile(r"(整理目录|项目目录|整理项目|organize)", re.IGNORECASE)
 DEFAULT_CHAPTER_TEMPLATE_ID = "default_chapter_directory"
 
 
@@ -32,13 +25,19 @@ class StorydexOrchestrationService:
         prompt: str,
         active_file: str = "",
         story_generation: Dict[str, Any] | None = None,
+        intent_frame: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         root = Path(workspace_root).resolve()
         self.story_project_service.ensure_project_structure(root)
         story_generation = story_generation if isinstance(story_generation, dict) else {}
         settings = self.story_project_service.read_project_settings(root)
         chapters = self.story_project_service.list_chapter_states(root)
-        intent = self._intent_frame(prompt=prompt, active_file=active_file, chapter_count=len(chapters))
+        intent = self._intent_frame(
+            prompt=prompt,
+            active_file=active_file,
+            chapter_count=len(chapters),
+            intent_frame=intent_frame,
+        )
         chapter_templates = self._list_chapter_templates(root)
         requested_template = self._selected_chapter_template(story_generation)
         selected_template = self._resolve_template(
@@ -138,31 +137,23 @@ class StorydexOrchestrationService:
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _intent_frame(self, *, prompt: str, active_file: str, chapter_count: int) -> Dict[str, Any]:
-        text = f"{prompt}\n{active_file}"
-        signals: List[str] = []
-        primary = "general"
-        if _STORY_INTENT_RE.search(text):
-            primary = "story_generation"
-            signals.append("story_keywords")
-        elif _CHARACTER_INTENT_RE.search(text):
-            primary = "character_work"
-            signals.append("character_keywords")
-        elif _WIKI_INTENT_RE.search(text):
-            primary = "wiki_work"
-            signals.append("wiki_keywords")
-        elif _PROJECT_ORGANIZE_RE.search(text):
-            primary = "project_organization"
-            signals.append("project_organization_keywords")
-        if active_file.startswith("chapters/") and primary == "general":
-            primary = "story_generation"
-            signals.append("active_chapter_file")
-        return {
-            "primary": primary,
-            "confidence": "medium" if signals else "low",
-            "signals": signals,
-            "existingChapterCount": chapter_count,
-        }
+    def _intent_frame(
+        self,
+        *,
+        prompt: str,
+        active_file: str,
+        chapter_count: int,
+        intent_frame: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        frame = intent_frame if is_valid_intent_frame(intent_frame) else None
+        if frame is None:
+            frame = heuristic_intent_frame(prompt=prompt, active_file=active_file)
+        frame = dict(frame)
+        frame["primary"] = str(frame.get("primary") or "general")
+        frame["confidence"] = str(frame.get("confidence") or "low")
+        frame["signals"] = list(frame.get("signals") if isinstance(frame.get("signals"), list) else [])
+        frame["existingChapterCount"] = chapter_count
+        return frame
 
     def _list_chapter_templates(self, workspace_root: Path) -> List[Dict[str, Any]]:
         return self.story_project_service.list_chapter_templates(workspace_root)
@@ -275,6 +266,16 @@ class StorydexOrchestrationService:
                 "name": "StorydexHelpGuideSearch",
                 "access": "read_only",
                 "purpose": "search bundled Storydex usage guides before answering operation questions",
+            },
+            {
+                "name": "StorydexProjectSearch",
+                "access": "read_only",
+                "purpose": "relevance-ranked full-text search over chapters and project assets to verify earlier plot details",
+            },
+            {
+                "name": "StorydexWikiQuery",
+                "access": "read_only",
+                "purpose": "query WIKI knowledge graph for entity facts, relationships, and foreshadowing with evidence",
             },
             {
                 "name": "StorydexSyncWiki",

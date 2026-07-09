@@ -66,7 +66,7 @@ const formattedArguments = computed(() => {
 <style scoped>
 .tool-call-card {
   border: 1px solid var(--color-border, #e0e0e0);
-  border-radius: 8px;
+  border-radius: 6px;
   margin: 8px 0;
   overflow: hidden;
   font-size: 13px;

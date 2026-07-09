@@ -1069,6 +1069,10 @@ function summarizeTurnContractPacket(packet: AgentStreamPacket): string {
   if (contextSummary) {
     pieces.push(`上下文：${contextSummary}`);
   }
+  const presetCompileWarning = summarizePresetCompileFailures(contextAssembly);
+  if (presetCompileWarning) {
+    pieces.push(presetCompileWarning);
+  }
   const skillCount = firstNumber(skillRegistry, ["skillCount"]) ?? 0;
   if (skillCount) {
     pieces.push(`技能：${skillCount} 个`);
@@ -1080,6 +1084,19 @@ function summarizeTurnContractPacket(packet: AgentStreamPacket): string {
   pieces.push(`变量：${Boolean(updatePolicy.autoUpdateVariables) ? "自动更新" : "生成后询问"}`);
   pieces.push(`WIKI：${Boolean(updatePolicy.autoUpdateWiki) ? "自动更新" : "变量后询问"}`);
   return pieces.join(" · ");
+}
+
+function summarizePresetCompileFailures(contextAssembly: Record<string, unknown>): string {
+  const notes = Array.isArray(contextAssembly.notes) ? contextAssembly.notes : [];
+  const failures = notes
+    .map((item) => String(item || ""))
+    .filter((note) => note.startsWith("preset_compile_failed:"))
+    .map((note) => note.slice("preset_compile_failed:".length).trim())
+    .filter(Boolean);
+  if (!failures.length) {
+    return "";
+  }
+  return `⚠ 预设编译失败（已回退为原文摘要）：${failures.slice(0, 2).join("；")}`;
 }
 
 function summarizeContextAssembly(contextAssembly: Record<string, unknown>): string {

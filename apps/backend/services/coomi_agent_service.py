@@ -5,6 +5,7 @@ import inspect
 import json
 import os
 import re
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,9 +18,14 @@ STORYDEX_COOMI_HOME = Path.home() / ".storydex"
 STORYDEX_COOMI_SESSIONS = STORYDEX_COOMI_HOME / ".coomi" / "sessions"
 STORYDEX_COOMI_CONFIG = STORYDEX_COOMI_HOME / ".coomi" / "config" / "providers.json"
 DEFAULT_CONTEXT_WINDOW = 256_000
+MIN_CONTEXT_WINDOW = 8_000
+MAX_CONTEXT_WINDOW = 4_000_000
+CONTEXT_WINDOW_KEYS = ("context_window", "contextWindow", "max_context_tokens", "maxContextTokens")
 COMPACT_THRESHOLD_RATIO = 0.9
 WARNING_THRESHOLD_RATIO = 0.6
 _COOMI_ENDPOINT_COMPAT_INSTALLED = False
+_COOMI_HOME_REDIRECTS_INSTALLED = False
+_COOMI_REDIRECT_INSTALL_LOCK = threading.Lock()
 
 
 class StorydexCoomiUnavailable(RuntimeError):
@@ -55,7 +61,7 @@ class StorydexCoomiAgentService:
         turn_contract: Dict[str, Any] | None = None,
     ) -> list[Dict[str, Any]]:
         workspace = Path(workspace_root).resolve()
-        with _storydex_coomi_home(), _coomi_working_directory(workspace):
+        with _storydex_coomi_home():
             self._ensure_coomi_installed()
             try:
                 from coomi.services import get_llm_provider
@@ -88,8 +94,7 @@ class StorydexCoomiAgentService:
         diff_summary: str = "",
         prompt: str = "",
     ) -> str:
-        workspace = Path(workspace_root).resolve()
-        with _storydex_coomi_home(), _coomi_working_directory(workspace):
+        with _storydex_coomi_home():
             self._ensure_coomi_installed()
             try:
                 from coomi.services import get_llm_provider
@@ -126,7 +131,7 @@ class StorydexCoomiAgentService:
         del active_file
         started = time.perf_counter()
         workspace = Path(workspace_root).resolve()
-        with _storydex_coomi_home(), _coomi_working_directory(workspace):
+        with _storydex_coomi_home():
             self._ensure_coomi_installed()
             command = _parse_slash_command(prompt)
             if command["name"] in {"plan", "exit_plan"}:
@@ -296,6 +301,8 @@ class StorydexCoomiAgentService:
                     turn_contract=turn_contract,
                     plan_mode=bool(getattr(agent, "plan_mode", False)),
                 )
+                # providers.json 的 context_window 可能在会话中途被修改，保持跟随。
+                setattr(agent, "context_window_size", _resolve_context_window())
                 _sync_coomi_runtime_workspace(
                     agent=agent,
                     session=session,
@@ -338,7 +345,7 @@ class StorydexCoomiAgentService:
             agent = AgentLoop(
                 provider,
                 registry,
-                context_window_size=DEFAULT_CONTEXT_WINDOW,
+                context_window_size=_resolve_context_window(),
                 app_context=app_context,
                 permission_system=permissions,
                 project_path=workspace_root.as_posix(),
@@ -457,7 +464,7 @@ class StorydexCoomiAgentService:
         runner = LoopRunner(
             provider,
             registry,
-            context_window_size=DEFAULT_CONTEXT_WINDOW,
+            context_window_size=_resolve_context_window(),
             app_context=app_context,
             permission_system=permissions,
         )
@@ -575,13 +582,14 @@ class StorydexCoomiAgentService:
         session = next(iter(self._sessions.values()), None)
         agent = next(iter(self._agents.values()), None)
         if session is None and agent is None:
+            context_window = _resolve_context_window()
             return {
-                "contextWindow": DEFAULT_CONTEXT_WINDOW,
+                "contextWindow": context_window,
                 "usedTokens": 0,
                 "usageRatio": 0.0,
                 "cumulativeTokens": 0,
-                "compactThreshold": int(DEFAULT_CONTEXT_WINDOW * COMPACT_THRESHOLD_RATIO),
-                "warningThreshold": int(DEFAULT_CONTEXT_WINDOW * WARNING_THRESHOLD_RATIO),
+                "compactThreshold": int(context_window * COMPACT_THRESHOLD_RATIO),
+                "warningThreshold": int(context_window * WARNING_THRESHOLD_RATIO),
                 "compressionStatus": "idle",
             }
         snapshot = _context_snapshot(session=session, agent=agent)
@@ -678,6 +686,45 @@ def _httpx_get(url: str, *, headers: Dict[str, str], timeout: float) -> Any:
     import httpx
 
     return httpx.get(url, headers=headers, timeout=timeout)
+
+
+def _read_providers_config_payload() -> Dict[str, Any]:
+    try:
+        content = STORYDEX_COOMI_CONFIG.read_text(encoding="utf-8")
+        parsed = json.loads(content) if content.strip() else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_context_window(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return max(MIN_CONTEXT_WINDOW, min(MAX_CONTEXT_WINDOW, parsed))
+
+
+def _resolve_context_window() -> int:
+    """Resolve the model context window from providers.json.
+
+    Lookup order: active provider's `context_window` (or aliases) -> top-level
+    `contextWindow` default -> DEFAULT_CONTEXT_WINDOW. Without this, Coomi's
+    compressor thresholds are computed against a hardcoded 256k window and
+    never fire for smaller models — the API errors out first.
+    """
+    payload = _read_providers_config_payload()
+    providers = payload.get("providers") if isinstance(payload.get("providers"), dict) else {}
+    active_id = str(payload.get("active") or "")
+    provider = providers.get(active_id) if isinstance(providers.get(active_id), dict) else {}
+    for source in (provider, payload):
+        for key in CONTEXT_WINDOW_KEYS:
+            parsed = _parse_context_window(source.get(key))
+            if parsed is not None:
+                return parsed
+    return DEFAULT_CONTEXT_WINDOW
 
 
 async def _call_provider_chat(provider: Any, messages: list[Dict[str, Any]], options: Any) -> Any:
@@ -1067,6 +1114,10 @@ def _storydex_check_permission(
     if normalized_tool == "AskUserQuestion":
         return permission_level_enum.AUTO
 
+    # 硬边界：无论权限模式如何，Write/Edit 不得落到小说项目工作区之外。
+    if normalized_tool in WRITE_TOOLS and _write_paths_escape_workspace(permissions, arguments):
+        return permission_level_enum.DENY
+
     mode = _normalize_permission_mode(str(getattr(permissions, "_storydex_mode", "full_access") or "full_access"))
     if bool(getattr(permissions, "_storydex_plan_mode", False)):
         return _storydex_plan_permission(permission_level_enum, permissions, normalized_tool, arguments)
@@ -1081,6 +1132,31 @@ def _storydex_check_permission(
         return _storydex_auto_permission(permission_level_enum, permissions, normalized_tool, arguments)
 
     return permission_level_enum.ASK
+
+
+_WRITE_PATH_ARGUMENT_KEYS = (
+    "path",
+    "file",
+    "file_path",
+    "relative_path",
+    "target_path",
+    "from_path",
+    "to_path",
+    "fromRelativePath",
+    "toRelativePath",
+    "relativePath",
+)
+
+
+def _write_paths_escape_workspace(permissions: Any, arguments: dict[str, Any]) -> bool:
+    workspace_root = Path(getattr(permissions, "_storydex_workspace_root", Path.cwd())).resolve()
+    for key in _WRITE_PATH_ARGUMENT_KEYS:
+        value = arguments.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if _resolve_permission_path(workspace_root, value) is None:
+            return True
+    return False
 
 
 def _storydex_plan_permission(
@@ -1232,37 +1308,40 @@ def _create_storydex_tool_registry(workspace_root: Path) -> Any:
     from services.storydex_agent_tools import (
         StorydexApplyStoryIncrementTool,
         StorydexHelpGuideSearchTool,
+        StorydexProjectSearchTool,
         StorydexRuntimePresetStatusTool,
         StorydexSyncWikiTool,
         StorydexVersionStatusTool,
+        StorydexWikiQueryTool,
     )
+    from services.storydex_coomi_runtime_tools import create_workspace_bound_tool_overrides
 
+    root = Path(workspace_root).resolve()
     registry = create_default_registry()
-    registry.register(StorydexRuntimePresetStatusTool(workspace_root=Path(workspace_root).resolve()))
-    registry.register(StorydexVersionStatusTool(workspace_root=Path(workspace_root).resolve()))
-    registry.register(StorydexHelpGuideSearchTool(workspace_root=Path(workspace_root).resolve()))
-    registry.register(StorydexSyncWikiTool(workspace_root=Path(workspace_root).resolve()))
-    registry.register(StorydexApplyStoryIncrementTool(workspace_root=Path(workspace_root).resolve()))
+    # 同名覆盖默认工具：文件/Shell 工具全部显式绑定工作区，
+    # 使 Agent 轮次不再依赖进程级 os.chdir。
+    for tool in create_workspace_bound_tool_overrides(root):
+        registry.register(tool)
+    registry.register(StorydexRuntimePresetStatusTool(workspace_root=root))
+    registry.register(StorydexVersionStatusTool(workspace_root=root))
+    registry.register(StorydexHelpGuideSearchTool(workspace_root=root))
+    registry.register(StorydexProjectSearchTool(workspace_root=root))
+    registry.register(StorydexWikiQueryTool(workspace_root=root))
+    registry.register(StorydexSyncWikiTool(workspace_root=root))
+    registry.register(StorydexApplyStoryIncrementTool(workspace_root=root))
     return registry
 
 
 def _sync_storydex_tools_workspace(registry: Any, workspace_root: Path) -> None:
     if registry is None:
         return
-    getter = getattr(registry, "get", None)
-    if not callable(getter):
-        return
-    for name in (
-        "StorydexRuntimePresetStatus",
-        "StorydexVersionStatus",
-        "StorydexHelpGuideSearch",
-        "StorydexSyncWiki",
-        "StorydexApplyStoryIncrement",
-    ):
-        tool = getter(name)
+    lister = getattr(registry, "list_tools", None)
+    tools = lister() if callable(lister) else []
+    resolved_root = Path(workspace_root).resolve()
+    for tool in tools or []:
         setter = getattr(tool, "set_workspace_root", None)
         if callable(setter):
-            setter(Path(workspace_root).resolve())
+            setter(resolved_root)
 
 
 async def _build_coomi_system_prompt(
@@ -1298,12 +1377,22 @@ async def _build_coomi_system_prompt(
         + "Authorized Storydex project file edits are direct writes. Do not create preview/pending-write approval artifacts. "
         + "At the end of the turn, Storydex records project file changes with a local Git commit automatically; never push to a remote.\n"
         + "Storydex registers domain tools outside Coomi: `StorydexRuntimePresetStatus`, "
-        + "`StorydexVersionStatus`, `StorydexHelpGuideSearch`, `StorydexSyncWiki`, and `StorydexApplyStoryIncrement`. "
+        + "`StorydexVersionStatus`, `StorydexHelpGuideSearch`, `StorydexProjectSearch`, "
+        + "`StorydexWikiQuery`, `StorydexSyncWiki`, and `StorydexApplyStoryIncrement`. "
         + "When the user asks how to use Storydex, where a feature is, or how a menu/settings/WIKI/version workflow works, "
-        + "call `StorydexHelpGuideSearch` before answering and ground the answer in the guide. "
+        + "call `StorydexHelpGuideSearch` before answering and ground the answer in the guide.\n"
+        + "Retrieval policy for story continuity: before referencing earlier plot details, foreshadowing, "
+        + "items, or settings that are NOT already present in the assembled context blocks, verify them first — "
+        + "use `StorydexProjectSearch` (relevance-ranked full-text search over chapters and project assets) to find "
+        + "the original passages, or `StorydexWikiQuery` to check entity facts and relationships with evidence. "
+        + "Never invent past plot facts; if retrieval finds nothing, treat the detail as unestablished and either "
+        + "avoid it or establish it explicitly as new canon. WIKI query results may contain model inference — "
+        + "when confidence is low or needsReview is true, confirm against chapters, character files, or variable memory.\n"
         + "For story creation or continuation turns, use `StorydexApplyStoryIncrement` after drafting fragments to apply structured increments: "
         + "fragments, variableThoughts or variableNotes as readable Markdown, characterUpdates/newCharacters, "
-        + "itemUpdates/newItems, factUpdates, relationshipUpdates, and optional WIKI sync. "
+        + "itemUpdates/newItems, factUpdates, relationshipUpdates, chapterSummary (a 150-300 character rolling "
+        + "summary of the chapter so far — pass it every continuation turn to keep mid-range plot context fresh), "
+        + "and optional WIKI sync. "
         + "Do not force variable thinking into fixed JSON path/value entries; variableUpdates are optional machine operations only "
         + "when the change is clear enough to merge safely. "
         + "If project settings do not auto-update variables, ask the user before passing applyVariables=true; "
@@ -1351,6 +1440,13 @@ def _render_turn_contract(value: Dict[str, Any] | None) -> str:
 
     primary = str(intent.get("primary") or "general")
     confidence = str(intent.get("confidence") or "low")
+    intent_targets = [str(item) for item in (intent.get("assetTargets") if isinstance(intent.get("assetTargets"), list) else []) if str(item)]
+    intent_skills = [str(item) for item in (intent.get("matchedSkills") if isinstance(intent.get("matchedSkills"), list) else []) if str(item)]
+    intent_line = f"- intent: {primary} (confidence: {confidence})"
+    if intent_targets:
+        intent_line += f"; write this intent's outputs under: {', '.join(intent_targets)}"
+    if intent_skills:
+        intent_line += f"; matching skills: {', '.join(intent_skills)}"
     status = str(contract.get("status") or "ready")
     fragment_count = _bounded_int(turn_plan.get("fragmentCount"), default=1, minimum=1, maximum=20)
     fragment_word_count = _bounded_int(turn_plan.get("fragmentWordCount"), default=2000, minimum=100, maximum=20000)
@@ -1363,7 +1459,7 @@ def _render_turn_contract(value: Dict[str, Any] | None) -> str:
     lines = [
         "\nStorydex turn contract:",
         f"- status: {status}",
-        f"- intent: {primary} (confidence: {confidence})",
+        intent_line,
         (
             "- execution: "
             f"directFileWrites={bool(execution.get('directFileWrites', True))}, "
@@ -1463,7 +1559,9 @@ def _render_context_assembly_blocks(value: Dict[str, Any]) -> str:
         return ""
     blocks = value.get("promptBlocks") if isinstance(value.get("promptBlocks"), list) else []
     rendered: list[str] = []
-    for raw in blocks[:8]:
+    # 组装器最多产出 12 类块（含 wiki_reference / rolling_summaries）；
+    # 渲染上限需覆盖全部并留余量，避免尾部块被静默丢弃。
+    for raw in blocks[:14]:
         block = _dict_value(raw)
         content = str(block.get("content") or "").strip()
         if not content:
@@ -1712,30 +1810,87 @@ class _CoomiEventTranslator:
         return tool_call_id or self._new_tool_call_id(tool_name)
 
 
+def _install_coomi_home_redirects() -> bool:
+    """Point Coomi's Path.home()-based storage at ~/.storydex/.coomi via patches.
+
+    Coomi 0.1.x offers no explicit config/home parameters, so Storydex used to
+    swap the HOME/USERPROFILE environment variables around every call — a
+    process-global race. These class-level patches redirect the same paths
+    once, without touching the environment. Returns False when the Coomi
+    internals have drifted, in which case the caller falls back to the legacy
+    env swap so functionality is preserved.
+    """
+    global _COOMI_HOME_REDIRECTS_INSTALLED
+    if _COOMI_HOME_REDIRECTS_INSTALLED:
+        return True
+    with _COOMI_REDIRECT_INSTALL_LOCK:
+        if _COOMI_HOME_REDIRECTS_INSTALLED:
+            return True
+        coomi_root = STORYDEX_COOMI_HOME / ".coomi"
+        try:
+            from coomi.services import session_history as coomi_session_history
+            from coomi.services.llm.config import ConfigManager
+            from coomi.services.memory.manager import MemoryManager
+        except Exception:
+            return False
+
+        try:
+            if not getattr(ConfigManager, "_storydex_home_redirect", False):
+                original_config_init = ConfigManager.__init__
+
+                def config_init_with_redirect(self: Any) -> None:
+                    # 原 __init__ 可能在真实 HOME 下建一个空模板文件（无害），
+                    # 之后强制指向 Storydex 目录并重新加载。
+                    original_config_init(self)
+                    self.config_dir = coomi_root / "config"
+                    self.config_path = self.config_dir / "providers.json"
+                    self.data = self._load()
+
+                ConfigManager.__init__ = config_init_with_redirect
+                setattr(ConfigManager, "_storydex_home_redirect", True)
+
+            if not getattr(MemoryManager, "_storydex_home_redirect", False):
+                def global_memory_dir(self: Any) -> Path:
+                    return coomi_root / "memory"
+
+                def project_memory_dir(self: Any, project_path: Any) -> Path:
+                    if not project_path:
+                        return self._get_global_memory_dir()
+                    resolved = Path(project_path).resolve()
+                    return coomi_root / "projects" / self._generate_project_hash(resolved) / "memory"
+
+                MemoryManager._get_global_memory_dir = global_memory_dir
+                MemoryManager._get_project_memory_dir = project_memory_dir
+                setattr(MemoryManager, "_storydex_home_redirect", True)
+
+            if not getattr(coomi_session_history, "_storydex_home_redirect", False):
+                coomi_session_history.default_sessions_dir = lambda: STORYDEX_COOMI_SESSIONS
+                setattr(coomi_session_history, "_storydex_home_redirect", True)
+        except Exception:
+            return False
+
+        _COOMI_HOME_REDIRECTS_INSTALLED = True
+        return True
+
+
 @contextmanager
 def _storydex_coomi_home() -> Iterator[None]:
     STORYDEX_COOMI_HOME.mkdir(parents=True, exist_ok=True)
     _ensure_storydex_coomi_config()
+    _install_coomi_endpoint_compat()
+    if _install_coomi_home_redirects():
+        yield
+        return
+    # 兜底：Coomi 内部结构变化导致重定向补丁失效时，退回旧的环境变量切换。
     previous_home = os.environ.get("HOME")
     previous_userprofile = os.environ.get("USERPROFILE")
     os.environ["HOME"] = str(STORYDEX_COOMI_HOME)
     os.environ["USERPROFILE"] = str(STORYDEX_COOMI_HOME)
-    _install_coomi_endpoint_compat()
     try:
         yield
     finally:
         _restore_env("HOME", previous_home)
         _restore_env("USERPROFILE", previous_userprofile)
-
-
-@contextmanager
-def _coomi_working_directory(workspace_root: Path) -> Iterator[None]:
-    previous_cwd = Path.cwd()
-    os.chdir(workspace_root)
-    try:
-        yield
-    finally:
-        os.chdir(previous_cwd)
 
 
 def _restore_env(name: str, value: str | None) -> None:
@@ -1753,7 +1908,7 @@ def _ensure_storydex_coomi_config() -> None:
 
 
 def _context_snapshot(*, session: Any = None, agent: Any = None) -> Dict[str, Any]:
-    context_window = int(getattr(agent, "context_window_size", 0) or DEFAULT_CONTEXT_WINDOW)
+    context_window = int(getattr(agent, "context_window_size", 0) or _resolve_context_window())
     usage = getattr(session, "token_usage", None)
     used_tokens = int(getattr(session, "last_prompt_tokens", 0) or 0)
     cumulative_tokens = int(getattr(usage, "total_tokens", 0) or 0)

@@ -28,7 +28,9 @@ EXCLUDED_RELATIVE_PREFIXES = (
 ENTITY_SOURCE_PATH = ".storydex/memory/current/entities.json"
 FACT_SOURCE_PATH = ".storydex/memory/current/facts.json"
 
-WIKI_CATEGORY_SCHEMA_VERSION = "story-wiki-v3-entity-source"
+WIKI_CATEGORY_SCHEMA_VERSION = "story-wiki-v4-stable-chapter-ids"
+# 图谱边总量上限：超过后按权重淘汰（原 300 条硬截断会静默丢弃长篇项目的新增边）。
+MAX_WIKI_GRAPH_EDGES = 1200
 ALLOWED_WIKI_CATEGORIES = {"overview", "characters", "setting", "plot", "relationships"}
 CATEGORY_ALIASES: Dict[str, str] = {
     "chapters": "plot",
@@ -291,7 +293,7 @@ class StoryWikiService:
         chapter_mentions = self._chapter_mentions_by_path(registry, chapter_sources, character_names)
 
         for index, source in enumerate(chapter_sources):
-            entry_id = f"chapter:{index + 1}"
+            entry_id = self._chapter_entry_id(source["relativePath"])
             chapter_title = self._display_title(source["relativePath"], source["title"])
             summary = self._compress_text(source["text"], 260) or "\u7ae0\u8282\u5185\u5bb9\u6682\u672a\u586b\u5145\u3002"
             entries.append(self._entry(
@@ -302,7 +304,7 @@ class StoryWikiService:
                 self._chapter_details(source, chapter_mentions.get(source["relativePath"], ())),
                 [source["relativePath"]],
             ))
-            node_id = f"chapter:{index + 1}"
+            node_id = entry_id
             graph_nodes.append({
                 "id": node_id,
                 "label": chapter_title,
@@ -350,9 +352,8 @@ class StoryWikiService:
             })
             graph_edges.append(self._edge(project_id, node_id, "\u89d2\u8272", "character"))
             for source in mentions[:6]:
-                chapter_idx = chapter_sources.index(source) + 1 if source in chapter_sources else 0
-                if chapter_idx:
-                    graph_edges.append(self._edge(node_id, f"chapter:{chapter_idx}", "\u51fa\u573a", "appearance"))
+                if source in chapter_sources:
+                    graph_edges.append(self._edge(node_id, self._chapter_entry_id(source["relativePath"]), "\u51fa\u573a", "appearance"))
 
         for entity in [item for item in entities if item["type"] != "character"]:
             entry_id = self._entity_node_id(entity)
@@ -379,12 +380,13 @@ class StoryWikiService:
             graph_edges.append(self._edge(project_id, entry_id, CATEGORY_LABELS.get(str(entity["category"]), "\u5173\u8054"), str(entity["type"])))
 
         # \u5171\u73b0\u6309\u89d2\u8272\u5bf9\u805a\u5408\u6210\u4e00\u6761\u8fb9\uff1aweight=\u5171\u73b0\u7ae0\u8282\u6570\uff0cevidence=\u7ae0\u8282\u6e05\u5355\uff0c\u907f\u514d\u9010\u7ae0\u5237\u5c4f\u3002
+        # \u89d2\u8272\u5bf9\u7528\u6392\u5e8f\u540e\u7684\u65e0\u5e8f key\uff0c\u9632\u6b62 A->B \u4e0e B->A \u751f\u6210\u4e24\u6761\u91cd\u590d\u8fb9\u3002
         co_occurrence: Dict[tuple, List[str]] = {}
         for source in chapter_sources:
             mentioned = list(chapter_mentions.get(source["relativePath"], ()))
             for left_idx, left in enumerate(mentioned):
                 for right in mentioned[left_idx + 1:]:
-                    key = (self._slug(left), self._slug(right))
+                    key = tuple(sorted((self._slug(left), self._slug(right))))
                     co_occurrence.setdefault(key, []).append(source["relativePath"])
         for (left_slug, right_slug), chapters in co_occurrence.items():
             graph_edges.append(self._edge(
@@ -449,6 +451,9 @@ class StoryWikiService:
         if before is None:
             # 尚无图谱，首次直接全量构建。
             return self.rebuild(root)
+        if not self._has_current_category_schema(before):
+            # 旧 schema（如按排序位置命名的章节 ID）需要全量重建迁移。
+            return self.rebuild(root)
 
         previous_index = self.read_index(root)
         changed_paths = self.changed_source_paths(root, sources=sources, previous_index=previous_index)
@@ -506,7 +511,7 @@ class StoryWikiService:
         for index, source in enumerate(chapter_sources):
             if source["relativePath"] not in changed_set:
                 continue
-            entry_id = f"chapter:{index + 1}"
+            entry_id = self._chapter_entry_id(source["relativePath"])
             chapter_title = self._display_title(source["relativePath"], source["title"])
             summary = self._compress_text(source["text"], 260) or "章节内容暂未填充。"
             entries.append(self._entry(
@@ -529,9 +534,10 @@ class StoryWikiService:
             mentioned = list(chapter_mentions.get(source["relativePath"], ()))
             for left_idx, left in enumerate(mentioned):
                 for right in mentioned[left_idx + 1:]:
+                    left_slug, right_slug = sorted((self._slug(left), self._slug(right)))
                     edges.append(self._edge(
-                        f"character:{self._slug(left)}",
-                        f"character:{self._slug(right)}",
+                        f"character:{left_slug}",
+                        f"character:{right_slug}",
                         "共现",
                         "relationship",
                         evidence=source["relativePath"],
@@ -579,9 +585,8 @@ class StoryWikiService:
             })
             edges.append(self._edge("project:root", entry_id, "角色", "character"))
             for source in mentions[:6]:
-                chapter_idx = chapter_sources.index(source) + 1 if source in chapter_sources else 0
-                if chapter_idx:
-                    edges.append(self._edge(entry_id, f"chapter:{chapter_idx}", "出场", "appearance"))
+                if source in chapter_sources:
+                    edges.append(self._edge(entry_id, self._chapter_entry_id(source["relativePath"]), "出场", "appearance"))
 
         if entity_changed:
             for entity in [item for item in entities if item["type"] != "character"]:
@@ -2709,15 +2714,38 @@ class StoryWikiService:
         seen: Dict[tuple[str, str, str], Dict[str, Any]] = {}
         for edge in edges:
             key = (str(edge.get("source")), str(edge.get("target")), str(edge.get("label")))
-            if not key[0] or not key[1] or key in seen:
+            if not key[0] or not key[1]:
                 continue
+            # 后见覆盖：merge 时 incoming 边在 base 之后，保证局部重建的
+            # 新 evidence/weight 能替换陈旧数据。
             seen[key] = edge
-        return list(seen.values())[:300]
+        result = list(seen.values())
+        if len(result) <= MAX_WIKI_GRAPH_EDGES:
+            return result
+        # 超出上限时按权重淘汰而不是按输入顺序截断：结构边和高权重
+        # 关系边优先保留，低权重共现边最先被淘汰。
+        def _keep_rank(edge: Dict[str, Any]) -> tuple[int, int]:
+            weight = self._safe_int(edge.get("weight"), fallback=1)
+            structural = 0 if edge.get("coOccurrence") else 1
+            return (structural, weight)
+
+        result.sort(key=_keep_rank, reverse=True)
+        return result[:MAX_WIKI_GRAPH_EDGES]
 
     def _slug(self, value: str) -> str:
         cleaned = re.sub(r"\s+", "-", value.strip())
         cleaned = re.sub(r"[^\w\-\u4e00-\u9fff]", "", cleaned)
         return cleaned or "item"
+
+    def _chapter_entry_id(self, relative_path: str) -> str:
+        """\u7ae0\u8282\u6761\u76ee/\u8282\u70b9 ID \u57fa\u4e8e\u6587\u4ef6\u8def\u5f84\uff0c\u4e0d\u968f\u6392\u5e8f\u4f4d\u7f6e\u6f02\u79fb\u3002
+
+        \u65e7\u5b9e\u73b0\u7528 `chapter:{\u6392\u5e8f\u4f4d\u7f6e}`\uff0c\u63d2\u5165/\u5220\u9664/\u91cd\u547d\u540d\u7ae0\u8282\u4f1a\u8ba9\u6240\u6709\u540e\u7eed
+        \u7ae0\u8282\u7684 ID \u79fb\u4f4d\uff0c\u589e\u91cf\u5408\u5e76\u65f6\u5185\u5bb9\u4e92\u76f8\u8986\u76d6\u3002\u8def\u5f84 slug \u662f\u7a33\u5b9a\u6807\u8bc6\u3002
+        """
+        normalized = str(relative_path or "").replace("\\", "/").strip("/")
+        normalized = re.sub(r"\.(md|txt)$", "", normalized, flags=re.IGNORECASE)
+        return f"chapter:{self._slug(normalized.replace('/', '-'))}"
 
     def _render_markdown(self, payload: Dict[str, Any]) -> str:
         lines = [f"# {payload.get('projectName', 'Storydex')} WIKI", "", str(payload.get("summary", "")), ""]

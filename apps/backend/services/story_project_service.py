@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ _PREFIX_NUMBER_RE = re.compile(r"^(?P<prefix>.*?)(?P<number>\d{2,4})$")
 _SCRIPT_CONTEXT_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml"}
 _RUNTIME_PRESET_TEXT_SUFFIXES = {".md", ".txt"}
 _RUNTIME_PRESET_JSON_SUFFIX = ".safe.json"
+_PRESET_COMPILE_LOGGER = logging.getLogger("storydex.preset_compile")
 # 外部导入预设编译后动辄上万字，运行时给它专用的大预算（Storydex 自有
 # 预设仍走 720/2400 的紧凑预算）。
 _ST_RUNTIME_PRESET_MAX_CHARS_PER_FILE = 24_000
@@ -1663,6 +1665,7 @@ class StoryProjectService:
             payload.get("applyWiki", payload.get("apply_wiki")),
             default=bool(settings.get("autoUpdateWiki", False)) and apply_variables,
         )
+        chapter_summary = str(payload.get("chapterSummary") or payload.get("chapter_summary") or "").strip()
         fragments = self._normalize_story_increment_fragments(payload)
         if not fragments:
             fragments = [{}]
@@ -1811,6 +1814,24 @@ class StoryProjectService:
         if apply_variables and applied_items:
             written_paths.extend(self._apply_item_updates(root, applied_items, updated_at=now_iso))
 
+        chapter_summary_path = ""
+        if chapter_summary:
+            # 滚动章节摘要：Agent 生成正文时顺带产出，零额外 LLM 往返；
+            # 按章节 key 覆盖写入，作为中程剧情脉络的读取层数据源。
+            from services.memory_extraction_service import MemoryExtractionService
+
+            last_segment = fragment_results[-1]["segmentPath"] if fragment_results else ""
+            chapter_summary_path = (
+                MemoryExtractionService().write_rolling_summary(
+                    chapter_summary,
+                    workspace_root=root,
+                    chapter_id=self._chapter_key_for_segment(last_segment),
+                )
+                or ""
+            )
+            if chapter_summary_path:
+                written_paths.append(chapter_summary_path)
+
         wiki_payload: Dict[str, Any] = {}
         if apply_wiki:
             from services.story_wiki_service import get_story_wiki_service
@@ -1857,6 +1878,7 @@ class StoryProjectService:
                 "autoUpdateVariablesNote": str(settings.get("autoUpdateVariablesNote") or ""),
             },
             "fragments": fragment_results,
+            "chapterSummaryPath": chapter_summary_path,
             "writtenPaths": unique_written_paths,
             "writtenPathCount": len(unique_written_paths),
             "requiredDecisions": required_decisions,
@@ -1870,6 +1892,17 @@ class StoryProjectService:
                 "memoryPath": ".storydex/memory/current/items.json",
             },
         }
+
+    @staticmethod
+    def _chapter_key_for_segment(segment_relative_path: str) -> str:
+        """从片段路径推断滚动摘要的章节 key：chapters/第1章/001.md → 第1章。"""
+        normalized = str(segment_relative_path or "").replace("\\", "/").strip("/")
+        parts = [part for part in normalized.split("/") if part]
+        if len(parts) >= 3 and parts[0] == "chapters":
+            return parts[1]
+        if parts:
+            return Path(parts[-1]).stem
+        return ""
 
     def build_generation_context(
         self,
@@ -2732,7 +2765,7 @@ class StoryProjectService:
             "# 项目命名约定",
             "",
             "1. 新剧情片段只能创建在 `chapters/<章节目录>/` 下，并优先续写当前未完结章节。",
-            "2. 章节目录必须严格遵循“第X章 标题”的格式，禁止继续使用 `ch001_intro` 之类旧风格。",
+            "2. 章节目录必须严格遵循“第X章 标题”的格式，X 使用阿拉伯数字（如“第1章 开端”、“第12章 决战”），禁止中文数字（“第一章”）与 `ch001_intro` 之类旧风格。",
             f"3. 当前项目观察到的剧情片段命名风格：{self._describe_segment_naming(segment_detection)}。",
             f"4. 每个章节最多容纳 {self._normalize_max_segments_per_chapter(settings.get('maxSegmentsPerChapter'))} 个剧情片段，写满后必须自动切到下一章。",
             "5. 若无法确认命名风格，默认使用 `001.md` 或 `001.txt`。",
@@ -3348,9 +3381,12 @@ class StoryProjectService:
         title = re.sub(r"\s+", " ", title).strip()
         if not title:
             title = "未命名"
-        return f"第{self._number_to_chinese(chapter_number)}章 {title}"
+        # 规范名统一用阿拉伯数字（与默认模板「第1章 未命名」一致）。
+        # 旧版用中文数字导致归一重命名与 LLM 落盘路径（阿拉伯）互相打架，
+        # 每轮生成都会留下一个同名空目录。
+        return f"第{chapter_number}章 {title}"
 
-    def _build_new_chapter_name(self, chapter_number: int, title: str = "未命名", *, number_style: str = "chinese") -> str:
+    def _build_new_chapter_name(self, chapter_number: int, title: str = "未命名", *, number_style: str = "arabic") -> str:
         chapter_number_text = str(chapter_number) if number_style == "arabic" else self._number_to_chinese(chapter_number)
         return f"第{chapter_number_text}章 {self._sanitize_chapter_title(title)}"
 
@@ -3474,6 +3510,7 @@ class StoryProjectService:
             return
 
         with self._lock:
+            self._prune_duplicate_empty_chapter_dirs(root)
             chapter_dirs = self._sorted_chapter_dirs(chapters_root)
             pending_renames: List[Tuple[Path, Path]] = []
             reserved_targets = {path.name for path in chapter_dirs}
@@ -3713,7 +3750,67 @@ class StoryProjectService:
                 code="story_increment_segment_path_invalid",
                 details={"segmentPath": normalized},
             ) from exc
-        return candidate.relative_to(root).as_posix()
+        return self._canonicalize_segment_chapter_dir(root, candidate.relative_to(root).as_posix())
+
+    def _canonicalize_segment_chapter_dir(self, workspace_root: Path, segment_relative_path: str) -> str:
+        """同号章节目录归一：目标章节目录不存在但已有同章号目录时，重定向到现有目录。
+
+        防止「第一章/第1章」这类异体命名（LLM 自选路径或归一重命名后的旧路径）
+        在磁盘上分裂出第二个章节目录。
+        """
+        path = Path(segment_relative_path)
+        if len(path.parts) < 3 or path.parts[0] != "chapters":
+            return segment_relative_path
+        root = Path(workspace_root).resolve()
+        chapter_number = self._extract_chapter_number(path.parts[1])
+        if chapter_number <= 0:
+            return segment_relative_path
+        # 先列章节状态：内部会归一目录命名并清掉同章号的空目录，
+        # 之后再判断目标目录是否存在，避免对着即将被清理的空壳落盘。
+        states = self.list_chapter_states(root)
+        chapter_dir = root / path.parts[0] / path.parts[1]
+        if chapter_dir.exists():
+            return segment_relative_path
+        for state in states:
+            if state.chapter_number != chapter_number:
+                continue
+            existing_dir = root / state.relative_path
+            if existing_dir.is_dir():
+                return (Path(state.relative_path) / Path(*path.parts[2:])).as_posix()
+        return segment_relative_path
+
+    def _prune_duplicate_empty_chapter_dirs(self, workspace_root: Path) -> List[str]:
+        """清理与现有章节同章号的空目录（历史命名分裂留下的残骸）。
+
+        只删「空且章号与某个非空章节重复」的目录，用户手动新建的
+        待写作空章节（章号唯一）不会被触碰。
+        """
+        root = Path(workspace_root).resolve()
+        chapters_root = root / "chapters"
+        removed: List[str] = []
+        if not chapters_root.is_dir():
+            return removed
+        numbers_with_content: Set[int] = set()
+        empty_dirs: List[Tuple[int, Path]] = []
+        for directory in chapters_root.iterdir():
+            if not directory.is_dir():
+                continue
+            number = self._extract_chapter_number(directory.name)
+            if number <= 0:
+                continue
+            if any(directory.iterdir()):
+                numbers_with_content.add(number)
+            else:
+                empty_dirs.append((number, directory))
+        for number, directory in empty_dirs:
+            if number not in numbers_with_content:
+                continue
+            try:
+                directory.rmdir()
+            except OSError:
+                continue
+            removed.append(directory.relative_to(root).as_posix())
+        return removed
 
     def _normalize_story_increment_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(payload, dict):
@@ -4594,6 +4691,7 @@ class StoryProjectService:
         max_chars_per_file: int = 720,
         runtime_context: Optional[Dict[str, Any]] = None,
         st_max_chars_per_file: Optional[int] = None,
+        compile_errors: Optional[List[str]] = None,
     ) -> List[Tuple[str, str]]:
         root = Path(workspace_root).resolve()
         preset_root = self.storydex_root(root) / "presets"
@@ -4614,6 +4712,8 @@ class StoryProjectService:
                         runtime_context=runtime_context,
                         max_chars=max_chars_per_file,
                         st_max_chars=st_max_chars_per_file,
+                        source_path=path.relative_to(root).as_posix(),
+                        compile_errors=compile_errors,
                     )
                     if compiled:
                         entries.append((path.relative_to(root).as_posix(), compiled))
@@ -4633,6 +4733,8 @@ class StoryProjectService:
         runtime_context: Optional[Dict[str, Any]],
         max_chars: int,
         st_max_chars: Optional[int] = None,
+        source_path: str = "",
+        compile_errors: Optional[List[str]] = None,
     ) -> str:
         try:
             from services.preset_compiler import compile_preset
@@ -4649,7 +4751,13 @@ class StoryProjectService:
                 ]
                 if injection_texts:
                     compiled = "\n\n".join(part for part in [compiled, *injection_texts] if part)
-        except Exception:
+        except Exception as exc:
+            # 编译失败不能静默：用户会以为预设生效了。记录日志并把错误
+            # 传给调用方（进入上下文组装 notes / 运行时状态工具）。
+            message = f"{source_path or 'preset sidecar'}: {type(exc).__name__}: {exc}"
+            _PRESET_COMPILE_LOGGER.warning("Preset sidecar compile failed: %s", message)
+            if compile_errors is not None:
+                compile_errors.append(message)
             return ""
         effective_max = max_chars
         if st_max_chars is not None and self._is_silly_tavern_document(doc):
@@ -4746,6 +4854,7 @@ class StoryProjectService:
         max_chars_per_file: int = 720,
         total_chars: int = 2400,
         runtime_context: Optional[Dict[str, Any]] = None,
+        compile_errors: Optional[List[str]] = None,
     ) -> str:
         entries = self._collect_preset_entries(
             workspace_root,
@@ -4753,6 +4862,7 @@ class StoryProjectService:
             max_chars_per_file=max_chars_per_file,
             runtime_context=runtime_context,
             st_max_chars_per_file=_ST_RUNTIME_PRESET_MAX_CHARS_PER_FILE,
+            compile_errors=compile_errors,
         )
         if not entries:
             return ""

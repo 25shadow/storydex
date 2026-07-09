@@ -4,7 +4,7 @@ import re
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 from core.bounded_text_io import read_text_preview as read_bounded_text_preview
 from services.entity_registry import EntityRegistry
@@ -15,6 +15,7 @@ from services.story_project_service import StoryProjectService, get_story_projec
 
 _HEADER_RE = re.compile(r"^###\s+(.+?)\s*$", re.MULTILINE)
 _VARIABLE_SNAPSHOT_PATH = ".storydex/memory/current-state/\u5168\u90e8\u53d8\u91cf.json"
+_WIKI_GRAPH_PATH = ".storydex/wiki/knowledge_graph.json"
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,7 @@ class StorydexContextAssemblerService:
         blocks: List[Dict[str, Any]] = []
         sources: List[Dict[str, Any]] = []
         notes: List[str] = []
-        max_total_chars = 7600
+        max_total_chars = 10000
 
         preset_paths = self._runtime_preset_paths(root)
         preset_runtime_context = self._build_preset_runtime_context(
@@ -48,13 +49,18 @@ class StorydexContextAssemblerService:
             prompt=prompt,
             active_entities=active_entities,
         )
+        preset_compile_errors: List[str] = []
         preset_block = self.story_project_service._build_preset_context(  # noqa: SLF001 - existing Storydex context builder
             root,
             max_files=5,
             max_chars_per_file=720,
             total_chars=2200,
             runtime_context=preset_runtime_context,
+            compile_errors=preset_compile_errors,
         )
+        for error in preset_compile_errors:
+            # 编译失败必须浮出：notes 随 TurnContract 发给前端展示。
+            notes.append(f"preset_compile_failed: {error}")
         # 外部导入预设可远超默认 2200 字预算；按实际长度放开该块，
         # 并把全局预算按溢出扩容，保证其他上下文块的预算不被挤占。
         preset_block_budget = max(2200, len(preset_block))
@@ -68,6 +74,38 @@ class StorydexContextAssemblerService:
             content=preset_block,
             source_paths=preset_paths or self._extract_context_paths(preset_block),
             max_chars=preset_block_budget,
+            max_total_chars=max_total_chars,
+            notes=notes,
+        )
+
+        # 最近正文片段紧随预设：续写时上文是第一上下文，
+        # 不能被后续硬约束/记忆块把预算挤占殆尽。
+        recent_segments = self._recent_segments(root, generation_context=generation_context, active_file=active_file)
+        recent_segment_paths = [str(item.get("relativePath") or "") for item in recent_segments if str(item.get("relativePath") or "")]
+        sources.append(self._source("recent_segments", recent_segment_paths, policy="compact_recent_only"))
+        self._append_block(
+            blocks,
+            block_id="recent_segments",
+            title="Recent story segments",
+            kind="segment",
+            content=self._render_recent_segments(recent_segments),
+            source_paths=recent_segment_paths,
+            max_chars=1400,
+            max_total_chars=max_total_chars,
+            notes=notes,
+        )
+
+        # 滚动章节摘要：介于"紧邻上文"与"实体记忆"之间的中程剧情脉络。
+        rolling_summaries, rolling_paths = self._render_rolling_summaries(root)
+        sources.append(self._source("rolling_summaries", rolling_paths, policy="latest_chapters_only"))
+        self._append_block(
+            blocks,
+            block_id="rolling_summaries",
+            title="Rolling chapter summaries",
+            kind="summary",
+            content=rolling_summaries,
+            source_paths=rolling_paths,
+            max_chars=800,
             max_total_chars=max_total_chars,
             notes=notes,
         )
@@ -180,17 +218,37 @@ class StorydexContextAssemblerService:
             notes=notes,
         )
 
-        recent_segments = self._recent_segments(root, generation_context=generation_context, active_file=active_file)
-        recent_segment_paths = [str(item.get("relativePath") or "") for item in recent_segments if str(item.get("relativePath") or "")]
-        sources.append(self._source("recent_segments", recent_segment_paths, policy="compact_recent_only"))
+        related_passages, related_paths = self._render_related_passages(
+            root,
+            prompt=prompt,
+            active_entities=active_entities,
+            # rolling_summaries 块已注入的摘要不再重复召回。
+            exclude_paths={*recent_segment_paths, *rolling_paths, str(active_file or "").replace("\\", "/")},
+        )
+        sources.append(self._source("related_passages", related_paths, policy="fts5_bm25_top_hits"))
         self._append_block(
             blocks,
-            block_id="recent_segments",
-            title="Recent story segments",
-            kind="segment",
-            content=self._render_recent_segments(recent_segments),
-            source_paths=recent_segment_paths,
-            max_chars=1400,
+            block_id="related_passages",
+            title="Related project passages (retrieval)",
+            kind="retrieval",
+            content=related_passages,
+            source_paths=related_paths,
+            max_chars=1000,
+            max_total_chars=max_total_chars,
+            notes=notes,
+        )
+
+        wiki_reference, wiki_entry_count = self._render_wiki_reference(root, active_entities=active_entities)
+        wiki_paths = [_WIKI_GRAPH_PATH] if wiki_entry_count else []
+        sources.append(self._source("wiki_reference", wiki_paths, count=wiki_entry_count, policy="entity_matched_reference_only"))
+        self._append_block(
+            blocks,
+            block_id="wiki_reference",
+            title="WIKI reference entries (non-canonical)",
+            kind="wiki",
+            content=wiki_reference,
+            source_paths=wiki_paths,
+            max_chars=800,
             max_total_chars=max_total_chars,
             notes=notes,
         )
@@ -298,6 +356,197 @@ class StorydexContextAssemblerService:
                 }
             )
         return context
+
+    def _render_related_passages(
+        self,
+        root: Path,
+        *,
+        prompt: str,
+        active_entities: Sequence[str],
+        exclude_paths: Set[str],
+    ) -> Tuple[str, List[str]]:
+        """FTS5/BM25 检索与本轮请求相关的项目段落（中文 bigram 索引）。
+
+        查询只取高置信度信号：活跃实体 + prompt 中被引号括起的专有名词。
+        prompt 全文不进查询——续写指令里的功能词（"继续写这一段"等）切成
+        bigram 后会把召回带偏向字面重叠多的无关文档。没有可用检索词时
+        跳过本块。受 CONTEXT_PIPELINE_FTS5 Flag 控制，索引失败时静默降级
+        为空块，不影响本轮生成。
+        """
+        query = " ".join(self._related_passage_query_terms(prompt, active_entities)).strip()
+        if not query:
+            return "", []
+        try:
+            from core.feature_flags import get_flags
+
+            if not get_flags().get_bool("CONTEXT_PIPELINE_FTS5"):
+                return "", []
+            from services.retrieval_service import get_retrieval_service
+
+            service = get_retrieval_service(root)
+            service.watch_files()
+            hits = service.search(query, top_k=8)
+        except Exception:
+            return "", []
+
+        normalized_excludes = {str(path).replace("\\", "/") for path in exclude_paths if str(path).strip()}
+        selected: List[Tuple[str, str]] = []
+        for path, _score, snippet in hits:
+            normalized = str(path).replace("\\", "/")
+            if normalized in normalized_excludes:
+                continue
+            if not self._is_retrievable_content_path(normalized):
+                continue
+            if not snippet.strip():
+                continue
+            selected.append((normalized, snippet.strip()))
+            if len(selected) >= 3:
+                break
+        if not selected:
+            return "", []
+        lines = [
+            "[Related Project Passages]",
+            "Retrieval hits for this turn only; treat as reference excerpts, not full documents.",
+        ]
+        for path, snippet in selected:
+            lines.extend(["", f"### {path}", snippet])
+        return "\n".join(lines).strip(), [path for path, _snippet in selected]
+
+    _RETRIEVABLE_CONTENT_PREFIXES = (
+        "chapters/",
+        ".storydex/characters/",
+        ".storydex/worldbook/",
+        ".storydex/memory/chapters/",
+        ".storydex/memory/summaries/",
+    )
+
+    _QUOTED_TERM_RE = re.compile(r"[「『《“‘]([^「」『』《》“”‘’]{2,24})[」』》”’]")
+
+    @classmethod
+    def _related_passage_query_terms(cls, prompt: str, active_entities: Sequence[str]) -> List[str]:
+        """被动检索的查询词：活跃实体正名 + prompt 中引号/书名号括起的短语。"""
+        terms = [str(item).strip() for item in active_entities if str(item).strip()]
+        for match in cls._QUOTED_TERM_RE.finditer(str(prompt or "")):
+            value = match.group(1).strip()
+            if value:
+                terms.append(value)
+        return list(dict.fromkeys(terms))
+
+    @staticmethod
+    def _render_wiki_reference(root: Path, *, active_entities: Sequence[str]) -> Tuple[str, int]:
+        """活跃实体命中的 WIKI 蒸馏条目，作为参考层注入（非硬约束）。
+
+        只读已生成的 knowledge_graph.json；不存在或损坏时静默跳过，
+        被动路径绝不触发 WIKI 构建。WIKI 含模型推断内容，因此：
+        needsReview 条目排除、confidence 随行标注、块头声明权威事实
+        以正文/角色文件/变量记忆为准。
+        """
+        entities = [str(item).strip() for item in active_entities if str(item).strip()]
+        if not entities:
+            return "", 0
+        wiki_path = root / _WIKI_GRAPH_PATH
+        if not wiki_path.exists():
+            return "", 0
+        try:
+            payload = json.loads(wiki_path.read_text(encoding="utf-8"))
+        except Exception:
+            return "", 0
+        raw_entries = payload.get("entries") if isinstance(payload, dict) else None
+        entries = [entry for entry in raw_entries if isinstance(entry, dict)] if isinstance(raw_entries, list) else []
+        if not entries:
+            return "", 0
+
+        selected: List[Dict[str, Any]] = []
+        seen_ids: Set[str] = set()
+        for entity in entities:
+            for entry in entries:
+                if bool(entry.get("needsReview")):
+                    continue
+                if str(entry.get("category") or "") == "overview":
+                    continue
+                entry_id = str(entry.get("id") or "")
+                if not entry_id or entry_id in seen_ids:
+                    continue
+                title = str(entry.get("title") or "").strip()
+                if not title or (entity not in title and title not in entity):
+                    continue
+                selected.append(entry)
+                seen_ids.add(entry_id)
+                break  # 每个实体最多取一条，防单实体多条目霸占预算
+            if len(selected) >= 4:
+                break
+        if not selected:
+            return "", 0
+
+        lines = [
+            "[WIKI Reference Entries]",
+            "Distilled WIKI entries for active entities. Reference only and may include model inference; "
+            "canonical facts live in chapters, character files, and variable memory.",
+        ]
+        for entry in selected:
+            title = str(entry.get("title") or "").strip()
+            category = str(entry.get("categoryLabel") or entry.get("category") or "").strip()
+            summary = " ".join(str(entry.get("summary") or "").split())
+            piece = f"- {title}"
+            annotations = [item for item in (category, StorydexContextAssemblerService._format_confidence(entry.get("confidence"))) if item]
+            if annotations:
+                piece += f" ({', '.join(annotations)})"
+            if summary:
+                piece += f": {summary}"
+            lines.append(piece)
+        return "\n".join(lines), len(selected)
+
+    @staticmethod
+    def _format_confidence(value: Any) -> str:
+        try:
+            return f"confidence={float(value):.2f}"
+        except (TypeError, ValueError):
+            return ""
+
+    @classmethod
+    def _is_retrievable_content_path(cls, normalized_path: str) -> bool:
+        """只召回创作内容；框架骨架（README/模板/配置/预设/WIKI 生成物）排除。"""
+        lowered = normalized_path.casefold()
+        if lowered.endswith("/readme.md") or lowered == "readme.md":
+            return False
+        return any(normalized_path.startswith(prefix) for prefix in cls._RETRIEVABLE_CONTENT_PREFIXES)
+
+    @staticmethod
+    def _render_rolling_summaries(root: Path) -> Tuple[str, List[str]]:
+        """最近章节的滚动摘要（memory/summaries/rolling/），按 mtime 取最新两章。"""
+        summaries_dir = root / ".storydex" / "memory" / "summaries" / "rolling"
+        if not summaries_dir.is_dir():
+            return "", []
+        candidates: List[Tuple[float, Path]] = []
+        for path in summaries_dir.glob("*.md"):
+            if not path.is_file():
+                continue
+            try:
+                candidates.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        lines = [
+            "[Rolling Chapter Summaries]",
+            "Mid-range plot context from the most recent chapters; compact summaries only.",
+        ]
+        paths: List[str] = []
+        for _mtime, path in candidates[:2]:
+            try:
+                raw = read_bounded_text_preview(path, max_chars=600)
+            except Exception:
+                continue
+            body = " ".join(
+                " ".join(line.strip() for line in raw.splitlines() if line.strip() and not line.lstrip().startswith("#")).split()
+            )[:400]
+            if not body:
+                continue
+            relative = path.relative_to(root).as_posix()
+            paths.append(relative)
+            lines.extend(["", f"### {relative}", body])
+        if not paths:
+            return "", []
+        return "\n".join(lines).strip(), paths
 
     def _recent_segments(
         self,

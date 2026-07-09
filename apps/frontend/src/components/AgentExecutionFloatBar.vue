@@ -123,10 +123,10 @@ function openRunDiff(): void {
   max-width: 100%;
   margin: 0 4px 0 auto;
   border: 1px solid color-mix(in srgb, var(--text-muted) 18%, transparent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--bg-card) 94%, transparent);
   color: var(--text-main);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--shadow-popover);
   overflow: visible;
 }
 
@@ -243,9 +243,9 @@ function openRunDiff(): void {
   display: flex;
   flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--text-muted) 18%, transparent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--bg-card) 98%, transparent);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 

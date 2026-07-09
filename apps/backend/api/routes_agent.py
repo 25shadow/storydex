@@ -20,6 +20,7 @@ from services.coomi_agent_service import get_storydex_coomi_agent_service
 from services.git_service import get_git_service
 from services.project_service import get_project_service
 from services.story_project_service import get_story_project_service
+from services.storydex_intent_service import get_storydex_intent_service
 from services.storydex_orchestration_service import get_storydex_orchestration_service
 from services.trace_history_service import get_trace_history_service
 
@@ -30,6 +31,7 @@ trace_history_service = get_trace_history_service()
 project_service = get_project_service()
 agent_git_autocommit_service = get_agent_git_autocommit_service()
 storydex_orchestration_service = get_storydex_orchestration_service()
+storydex_intent_service = get_storydex_intent_service()
 git_service = get_git_service()
 story_project_service = get_story_project_service()
 
@@ -1876,11 +1878,18 @@ async def agent_chat(
     git_finished = False
     try:
         story_generation = _normalize_story_generation_options(payload.story_generation)
+        intent_frame = await storydex_intent_service.classify_intent(
+            prompt=payload.prompt,
+            active_file=payload.active_file,
+            workspace_root=workspace_root,
+            session_id=session_id,
+        )
         turn_contract = storydex_orchestration_service.build_turn_contract(
             workspace_root,
             prompt=payload.prompt,
             active_file=payload.active_file,
             story_generation=story_generation,
+            intent_frame=intent_frame,
         )
         story_generation = _apply_turn_contract_story_generation_defaults(story_generation, turn_contract)
         task_plan = await _create_agent_task_plan(
@@ -2005,11 +2014,18 @@ async def agent_chat_stream(
     git_snapshot = agent_git_autocommit_service.begin_turn(workspace_root)
     try:
         story_generation = _normalize_story_generation_options(payload.story_generation)
+        intent_frame = await storydex_intent_service.classify_intent(
+            prompt=payload.prompt,
+            active_file=payload.active_file,
+            workspace_root=workspace_root,
+            session_id=session_id,
+        )
         turn_contract = storydex_orchestration_service.build_turn_contract(
             workspace_root,
             prompt=payload.prompt,
             active_file=payload.active_file,
             story_generation=story_generation,
+            intent_frame=intent_frame,
         )
         story_generation = _apply_turn_contract_story_generation_defaults(story_generation, turn_contract)
     except Exception:
