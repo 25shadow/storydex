@@ -26,6 +26,7 @@ function assert(condition, message) {
 
 const packageVersion = String(packageJson.version || "").trim();
 const metadataVersion = String(packageJson.build?.extraMetadata?.version || "").trim();
+const metadataUpdateFeedUrl = String(packageJson.build?.extraMetadata?.storydexUpdateFeedUrl || "").trim();
 const appId = String(packageJson.build?.appId || "").trim();
 const artifactName = String(packageJson.build?.win?.artifactName || "").trim();
 const buildDesktopScript = String(packageJson.scripts?.["build:desktop"] || "");
@@ -43,14 +44,16 @@ assert(Boolean(packageJson.scripts?.["write:update-config"]), "package.json must
 assert(buildDesktopScript.includes("write:update-config"), "build:desktop must write resources/app-update.yml before NSIS packaging.");
 assert(fs.existsSync(appUpdateConfigScriptPath), "write:update-config script must exist.");
 assert(genericFeedUrl === "https://updates.septemc.com/storydex/windows/", "build.publish must point to the Storydex generic update feed.");
+assert(metadataUpdateFeedUrl === genericFeedUrl, "build.extraMetadata.storydexUpdateFeedUrl must match build.publish URL.");
 assert(!fs.existsSync(staleReleaseConfigPath), "Remove stale apps/desktop/storydex-release.json; it conflicts with package.json build config.");
 assert(!workflow.includes(`StorydexSetup-x64-${packageVersion}`), "release workflow must not hardcode the current package version in artifact names.");
 assert(!workflow.includes(`release-notes-v${packageVersion}.md`), "release workflow must not hardcode a versioned release notes path.");
 assert(workflow.includes("package.json") && workflow.includes("GITHUB_OUTPUT"), "release workflow must derive release metadata from package.json/tag outputs.");
 assert(workflow.includes("steps.release.outputs"), "release workflow must publish files selected by the release preparation step.");
+assert(workflow.includes("test:update-feed"), "release workflow must run the desktop update feed regression test.");
 assert(!mainSource.includes('setAppUserModelId("'), "Electron AppUserModelId must be derived from package build.appId.");
 assert(appId && mainSource.includes("DESKTOP_APP_ID"), "Electron main process must expose a DESKTOP_APP_ID derived from package metadata.");
-assert(mainSource.includes("DEFAULT_UPDATE_FEED_URL") && mainSource.includes("autoUpdater.setFeedURL"), "Electron updater must set a default generic feed URL at runtime.");
+assert(mainSource.includes("resolveUpdateFeedUrl") && mainSource.includes("autoUpdater.setFeedURL"), "Electron updater must set a default generic feed URL at runtime.");
 
 if (failures.length) {
   console.error("[Storydex Desktop] Release configuration validation failed:");

@@ -1,7 +1,7 @@
 {
   "name": "storydex-desktop",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Storydex desktop app",
   "main": "electron/main.cjs",
   "scripts": {
@@ -15,6 +15,7 @@
     "check:embedded-python": "node scripts/validate-embedded-python.cjs",
     "check:encoding": "node ../../scripts/validate_text_encoding.cjs",
     "check:release": "node scripts/validate-release-config.cjs",
+    "test:update-feed": "node --test tests/update-feed.test.cjs",
     "build:desktop": "npm run build:frontend && npm run sync:assets && npm run check:embedded-python && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --dir --win --config.win.signAndEditExecutable=false && npm run patch:win-exe && npm run write:update-config",
     "package:win": "npm run build:desktop && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&& electron-builder --win nsis --prepackaged release\\win-unpacked --config.win.signAndEditExecutable=false"
   },
@@ -36,7 +37,8 @@
       "output": "release"
     },
     "extraMetadata": {
-      "version": "0.3.1"
+      "version": "0.3.2",
+      "storydexUpdateFeedUrl": "https://updates.septemc.com/storydex/windows/"
     },
     "files": [
       "electron/**/*",

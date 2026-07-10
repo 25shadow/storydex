@@ -96,6 +96,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           npm --prefix apps/desktop run check:encoding
           npm --prefix apps/desktop run check:release
+          npm --prefix apps/desktop run test:update-feed
 
       - name: Prepare embedded Python
         shell: pwsh
