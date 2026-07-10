@@ -25,7 +25,15 @@ jobs:
         shell: pwsh
         run: |
           node scripts/validate_text_encoding.cjs
-          if (rg -n '^(<<<<<<<|=======|>>>>>>>)' --glob '!apps/desktop/app/python-env/**' .) { throw "Conflict markers found" }
+          $conflicts = & git grep -n -E '^(<<<<<<< .+|=======|>>>>>>> .+)$' -- . `
+            ':(exclude)apps/desktop/app/**' `
+            ':(exclude)apps/desktop/vendor/**' `
+            ':(exclude)apps/desktop/release/**' `
+            ':(exclude)releases/**'
+          $searchCode = $LASTEXITCODE
+          if ($searchCode -gt 1) { throw "Conflict-marker scan failed with exit code $searchCode" }
+          if ($conflicts) { $conflicts | Write-Host; throw "Conflict markers found" }
+          $global:LASTEXITCODE = 0
           node scripts/validate_version_consistency.cjs
           git diff --check
 
