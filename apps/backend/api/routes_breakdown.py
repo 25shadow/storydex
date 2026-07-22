@@ -197,6 +197,8 @@ async def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request)
     project_root = Path(project["workspaceRoot"])
     active_path = project_root / ".storydex" / "references" / "brainstorm" / "active.json"
     active_path.parent.mkdir(parents=True, exist_ok=True)
+    # Candidates belong to the breakdown record; only the confirmed idea belongs to the project.
+    (active_path.parent / f"{payload.idea_run_id}.json").unlink(missing_ok=True)
     selected = {
         "status": "active",
         "selectedAt": datetime.now(timezone.utc).isoformat(),
@@ -648,10 +650,6 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
     (ideas_root / f"{idea_run_id}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
     project = get_project_service().current_project()
-    project_root = Path(project["workspaceRoot"])
-    link_root = project_root / ".storydex" / "references" / "brainstorm"
-    link_root.mkdir(parents=True, exist_ok=True)
-    (link_root / f"{idea_run_id}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     result["linkedProject"] = str(project.get("projectName") or project_root.name)
     return success_response(
         data=result,
