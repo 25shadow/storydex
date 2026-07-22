@@ -21,12 +21,22 @@ export interface BreakdownResult {
   referenceChapterLimit: number;
   selectedChapters: BreakdownChapter[];
   studyCards: StudyCard[];
+  referenceRhythm?: ReferenceRhythmCard[];
   motherCards: MotherCard[];
   styleProfile?: StyleProfile;
   warnings: string[];
   status: string;
   nextStages: string[];
   latestIdeaRun?: IdeaGenerationResult;
+}
+
+export interface ReferenceRhythmCard {
+  chapterIndex: number;
+  narrativeMotion: string;
+  tensionTransition: string;
+  informationRelease: string;
+  readerContract: string;
+  hookShape: string;
 }
 
 export interface StudyCard {

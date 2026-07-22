@@ -60,6 +60,19 @@
             <p><b>章末钩子：</b>{{ card.endHook }}</p>
           </div>
         </button>
+        <section v-if="result.referenceRhythm?.length" class="rhythm-profile">
+          <div class="breakdown-section-title">逐章节奏档案</div>
+          <button v-for="rhythm in result.referenceRhythm" :key="rhythm.chapterIndex" class="study-card" type="button">
+            <strong>第 {{ rhythm.chapterIndex }} 章</strong>
+            <p>{{ rhythm.narrativeMotion }}</p>
+            <div class="card-details">
+              <p><b>压力变化：</b>{{ rhythm.tensionTransition }}</p>
+              <p><b>信息释放：</b>{{ rhythm.informationRelease }}</p>
+              <p><b>读者承诺：</b>{{ rhythm.readerContract }}</p>
+              <p><b>章末钩子：</b>{{ rhythm.hookShape }}</p>
+            </div>
+          </button>
+        </section>
         <section v-if="result.styleProfile" class="style-profile">
           <div class="breakdown-section-title">写作风格研究</div>
           <p><b>叙事视角：</b>{{ result.styleProfile.narrativePerspective }}</p>
