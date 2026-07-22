@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.response import ApiTrace, success_response
 from core.config import get_settings
 from services.book_breakdown_service import analyze_novel, decode_novel, reference_chapter_chunks
+from services.breakdown_planning_agent_service import get_breakdown_planning_agent
 from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
@@ -141,7 +142,19 @@ async def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request)
             status_code=422,
             detail="候选与参考书存在直接文本重合，不能设为主脑洞。请重新生成原创候选。",
         )
-    chapter_plan, plan_error = await _build_new_book_chapter_plan(idea)
+    reference_rhythm = analysis.get("referenceRhythm") if isinstance(analysis.get("referenceRhythm"), list) else []
+    if len(reference_rhythm) != 10:
+        raise HTTPException(status_code=409, detail="该拆书记录缺少逐章节奏档案，请重新分析参考书后再设为主脑洞。")
+    try:
+        chapter_plan = await get_breakdown_planning_agent().build_new_book_plan(idea, reference_rhythm)
+    except asyncio.TimeoutError:
+        chapter_plan = []
+        plan_error = "新书十章规划超时：模型在 120 秒内未完成，请稍后重试。"
+    except Exception as exc:
+        chapter_plan = []
+        plan_error = f"新书十章规划生成失败（{type(exc).__name__}）：请检查模型服务后重试。"
+    else:
+        plan_error = "" if chapter_plan else "AI 返回的新书十章规划格式不完整，请重试。"
     if not chapter_plan:
         raise HTTPException(
             status_code=503,
@@ -240,7 +253,18 @@ async def _analyze_reference_with_ai(
         return None, "AI 母卡与风格汇总失败：请确认模型服务可用后重试。"
     if not materials:
         return None, "AI 返回的母卡或风格结构不完整，请重试。"
-    return {"studyCards": study_cards, **materials}, ""
+    try:
+        reference_rhythm = await get_breakdown_planning_agent().build_reference_rhythm(study_cards)
+    except asyncio.TimeoutError:
+        return None, "AI 逐章节奏档案生成超时：请稍后重试。"
+    except Exception:
+        return None, "AI 逐章节奏档案生成失败：请确认模型服务可用后重试。"
+    if not reference_rhythm:
+        return None, "AI 返回的逐章节奏档案不完整，请重试。"
+    source_text = "".join(str(chunk.get("text") or "") for chunk in chapter_chunks if isinstance(chunk, dict))
+    if _reference_content_overlap(reference_rhythm, source_text):
+        return None, "AI 逐章节奏档案混入了参考书内容，已拒绝保存。请重新分析。"
+    return {"studyCards": study_cards, "referenceRhythm": reference_rhythm, **materials}, ""
 
 
 async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -470,54 +494,6 @@ async def _generate_ideas_with_ai(
         return [], "ai_unavailable", f"AI 脑洞生成失败（{label}）：请检查模型服务后重试。"
 
 
-async def _build_new_book_chapter_plan(idea: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
-    """Create a new-book plan from the selected original premise, never reference analysis."""
-    premise = {
-        field: str(idea.get(field) or "").strip()[:500]
-        for field in ("title", "genre", "protagonist", "coreRule", "mainConflict", "longTermEngine", "tenChapterPromise")
-    }
-    prompt = {
-        "task": "根据这份已经确认的原创立项，生成本书自己的前十章推进表。",
-        "originalPremise": premise,
-        "requirements": [
-            "输出 chapters 数组，必须恰好 10 项；每项包含 chapterIndex、narrativeTask、conflictProgress、informationProgress、endQuestion。",
-            "每一章必须围绕 originalPremise 的原创人物、规则和冲突展开，不得引用、猜测或补充任何参考书内容。",
-            "十章之间应有连续升级，但具体节奏、揭示顺序和钩子必须服务于这一本新书，不套用固定章节标签或模板。",
-            "各文本字段不超过 100 字；只输出 JSON 对象：{chapters: []}。",
-        ],
-    }
-    try:
-        response = await _call_creative_provider(
-            system="你是原创小说策划编辑。只根据给出的新书立项工作，不接触或复述任何参考作品。",
-            prompt=prompt,
-            purpose="new_book_chapter_plan",
-            timeout=120,
-        )
-        plan = _normalize_new_book_chapter_plan(_extract_json_object(str(getattr(response, "content", "") or "")))
-        if plan:
-            return plan, ""
-        return [], "AI 返回的新书十章规划格式不完整，请重试。"
-    except asyncio.TimeoutError:
-        return [], "新书十章规划超时：模型在 120 秒内未完成，请稍后重试。"
-    except Exception as exc:
-        return [], f"新书十章规划生成失败（{type(exc).__name__}）：请检查模型服务后重试。"
-
-
-def _normalize_new_book_chapter_plan(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
-    plan: list[dict[str, Any]] = []
-    fields = ("narrativeTask", "conflictProgress", "informationProgress", "endQuestion")
-    for item in raw_chapters:
-        if not isinstance(item, dict):
-            continue
-        index = int(item.get("chapterIndex") or 0)
-        if index < 1 or index > 10 or not all(str(item.get(field) or "").strip() for field in fields):
-            continue
-        plan.append({"chapterIndex": index, **{field: str(item[field]).strip()[:300] for field in fields}})
-    plan.sort(key=lambda item: int(item["chapterIndex"]))
-    return plan if [item["chapterIndex"] for item in plan] == list(range(1, 11)) else []
-
-
 def _candidate_source_overlap(idea: dict[str, Any], source_path: Path) -> str:
     """Reject candidate text that copies an eight-character source-book phrase."""
     try:
@@ -536,15 +512,33 @@ def _candidate_source_overlap(idea: dict[str, Any], source_path: Path) -> str:
     return ""
 
 
-async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:
-    from services.coomi_agent_service import _call_provider_chat, _storydex_coomi_home
-    from services.llm_replay import get_replayable_llm_provider, llm_purpose
+def _reference_content_overlap(reference_rhythm: list[dict[str, Any]], source_text: str) -> str:
+    """Reject a supposedly abstract rhythm if it repeats a source-book phrase."""
+    source = re.sub(r"\s+", "", source_text)
+    candidate = re.sub(
+        r"\s+",
+        "",
+        " ".join(
+            str(item.get(field) or "")
+            for item in reference_rhythm
+            if isinstance(item, dict)
+            for field in ("narrativeMotion", "tensionTransition", "informationRelease", "readerContract", "hookShape")
+        ),
+    )
+    for offset in range(max(0, len(candidate) - 3)):
+        phrase = candidate[offset : offset + 4]
+        if len(phrase) == 4 and phrase in source:
+            return phrase
+    return ""
 
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}]
-    with _storydex_coomi_home():
-        with llm_purpose(purpose):
-            provider = get_replayable_llm_provider()
-            return await asyncio.wait_for(_call_provider_chat(provider, messages, None), timeout=timeout)
+
+async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:
+    return await get_breakdown_planning_agent().run_model_turn(
+        system=system,
+        prompt=prompt,
+        purpose=purpose,
+        timeout=timeout,
+    )
 
 
 def _extract_idea_array(content: str) -> list[dict[str, Any]]:

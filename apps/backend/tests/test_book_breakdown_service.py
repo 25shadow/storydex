@@ -1,7 +1,8 @@
 import pytest
 
 from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, reference_chapter_chunks
-from api.routes_breakdown import _normalize_new_book_chapter_plan
+from services.breakdown_planning_agent_service import _NEW_BOOK_FIELDS, _normalize_plan
+from api.routes_breakdown import _reference_content_overlap
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -75,7 +76,19 @@ def test_new_book_chapter_plan_requires_a_complete_dynamic_ten_chapter_plan():
         for index in range(1, 11)
     ]}
 
-    plan = _normalize_new_book_chapter_plan(payload)
+    plan = _normalize_plan(payload, fields=_NEW_BOOK_FIELDS)
 
     assert [item["chapterIndex"] for item in plan] == list(range(1, 11))
     assert plan[0]["narrativeTask"] == "原创主线推进 1"
+
+
+def test_reference_rhythm_rejects_source_book_content():
+    rhythm = [{
+        "narrativeMotion": "展示时间静止的限制",
+        "tensionTransition": "压力上升",
+        "informationRelease": "信息递进",
+        "readerContract": "危机承诺",
+        "hookShape": "未解问题",
+    }]
+
+    assert _reference_content_overlap(rhythm, "主角发现时间静止的限制条件。") == "时间静止"
