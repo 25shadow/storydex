@@ -60,6 +60,23 @@ class BreakdownPlanningAgent:
         )
         return _normalize_plan(payload, fields=_NEW_BOOK_FIELDS)
 
+    async def sanitize_reference_rhythm(self, reference_rhythm: list[dict[str, Any]], forbidden_phrases: list[str]) -> list[dict[str, Any]]:
+        payload = await self._ask(
+            system="你是拆书规划 Agent 的安全审核步骤。将结构档案中的参考书内容改写为纯叙事节奏描述。",
+            purpose="breakdown_rhythm_sanitize",
+            prompt={
+                "task": "改写逐章节奏档案，保留每章的节奏关系，去除所有可能指向参考书的具体内容。",
+                "referenceRhythm": reference_rhythm,
+                "forbiddenPhrases": forbidden_phrases[:20],
+                "requirements": [
+                    "输出 chapters 数组，必须恰好十项；字段：chapterIndex、narrativeMotion、tensionTransition、informationRelease、readerContract、hookShape。",
+                    "不得出现 forbiddenPhrases，也不得出现人物、地名、组织、物件、能力、设定、事件或原句。",
+                    "保留每章相对上一章的压力、信息和钩子变化；只输出 JSON 对象：{chapters: []}。",
+                ],
+            },
+        )
+        return _normalize_plan(payload, fields=_RHYTHM_FIELDS)
+
     async def _ask(self, *, system: str, purpose: str, prompt: dict[str, Any]) -> dict[str, Any]:
         response = await self.run_model_turn(system=system, purpose=purpose, prompt=prompt, timeout=120)
         return _extract_json_object(str(getattr(response, "content", "") or ""))

@@ -117,7 +117,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import axios from "axios";
-import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { analyzeBreakdown, fetchBreakdown, fetchBreakdownJob, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 
@@ -167,9 +167,10 @@ async function startAnalysis(): Promise<void> {
     const bytes = new Uint8Array(buffer);
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const response = await analyzeBreakdown(selectedFile.value.name, btoa(binary));
-    result.value = response.data;
-    selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);
-    breakdownAgentStore.finish(`前十章研究完成，已生成 ${response.data.studyCards.length} 张章节研究卡和逐章节奏档案。`);
+    const analysis = await waitForBreakdownJob(response.data.jobId);
+    result.value = analysis;
+    selectedMotherCardIds.value = analysis.motherCards.map((card) => card.id);
+    breakdownAgentStore.finish(`前十章研究完成，已生成 ${analysis.studyCards.length} 张章节研究卡和逐章节奏档案。`);
   } catch (error) {
     errorMessage.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 拆书分析失败，请重试。")
@@ -177,6 +178,19 @@ async function startAnalysis(): Promise<void> {
     breakdownAgentStore.fail(errorMessage.value);
   }
   finally { loading.value = false; }
+}
+async function waitForBreakdownJob(jobId: string): Promise<BreakdownResult> {
+  let displayedEventCount = 0;
+  while (true) {
+    const job = await fetchBreakdownJob(jobId);
+    for (const event of job.data.events.slice(displayedEventCount)) {
+      breakdownAgentStore.report(event.content);
+    }
+    displayedEventCount = job.data.events.length;
+    if (job.data.status === "completed" && job.data.result) return job.data.result;
+    if (job.data.status === "failed") throw new Error(job.data.error || "AI 拆书分析失败，请重试。");
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+  }
 }
 async function generateIdeas(): Promise<void> {
   if (!result.value || !selectedMotherCardIds.value.length) return;

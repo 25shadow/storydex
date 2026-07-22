@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -20,6 +20,9 @@ from services.breakdown_planning_agent_service import get_breakdown_planning_age
 from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
+
+BREAKDOWN_JOBS: dict[str, dict[str, Any]] = {}
+ProgressReporter = Callable[[str], None]
 
 
 class BreakdownOptions(BaseModel):
@@ -199,53 +202,92 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
     if not payload.file_name.lower().endswith(".txt"):
         raise HTTPException(status_code=400, detail="拆书目前仅支持 .txt 文件")
     try:
-        result = analyze_novel(raw, Path(payload.file_name).name, payload.options.chapter_pattern)
+        analyze_novel(raw, Path(payload.file_name).name, payload.options.chapter_pattern)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    enhanced, analysis_error = await _analyze_reference_with_ai(
-        result=result,
-        chapter_chunks=reference_chapter_chunks(raw, result),
-    )
-    if not enhanced:
-        raise HTTPException(
-            status_code=503,
-            detail=analysis_error or "AI 拆书分析不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
-        )
-    result["studyCards"] = enhanced["studyCards"]
-    result["motherCards"] = enhanced["motherCards"]
-    result["styleProfile"] = enhanced["styleProfile"]
-    result["analysisMode"] = "ai_reference_analysis"
-    analysis_id = str(uuid4())
-    result["analysisId"] = analysis_id
-    root = get_settings().global_root / "breakdowns" / analysis_id
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "source.txt").write_bytes(raw)
-    (root / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    job_id = str(uuid4())
+    BREAKDOWN_JOBS[job_id] = {"status": "running", "events": [], "result": None, "error": ""}
+    _report_breakdown_job(job_id, "已接收 TXT，正在解析前十章范围。")
+    asyncio.create_task(_run_breakdown_job(job_id, raw, payload.file_name, payload.options.chapter_pattern))
     return success_response(
-        data=result,
+        data={"jobId": job_id, "status": "running"},
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
-        audit=[{"action": "breakdown_analyze", "analysisId": analysis_id, "chapterCount": result["chapterCount"]}],
+        audit=[{"action": "breakdown_analyze", "jobId": job_id}],
     ).model_dump(by_alias=True)
 
 
+@router.get("/breakdown/jobs/{job_id}")
+def breakdown_job(job_id: str, request: Request) -> dict[str, Any]:
+    job = BREAKDOWN_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="拆书任务不存在或已失效。")
+    return success_response(
+        data={"jobId": job_id, **job},
+        trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
+    ).model_dump(by_alias=True)
+
+
+def _report_breakdown_job(job_id: str, content: str) -> None:
+    job = BREAKDOWN_JOBS.get(job_id)
+    if job is None:
+        return
+    job["events"].append({"id": str(uuid4()), "content": content, "timestamp": datetime.now(timezone.utc).isoformat()})
+
+
+async def _run_breakdown_job(job_id: str, raw: bytes, file_name: str, chapter_pattern: str) -> None:
+    job = BREAKDOWN_JOBS[job_id]
+    try:
+        result = analyze_novel(raw, Path(file_name).name, chapter_pattern)
+        chapter_chunks = reference_chapter_chunks(raw, result)
+        _report_breakdown_job(job_id, f"已识别前 {len(result['selectedChapters'])} 章，分为 {len(chapter_chunks)} 个分析块。")
+        enhanced, analysis_error = await _analyze_reference_with_ai(
+            result=result,
+            chapter_chunks=chapter_chunks,
+            progress=lambda content: _report_breakdown_job(job_id, content),
+        )
+        if not enhanced:
+            raise RuntimeError(analysis_error or "AI 拆书分析不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。")
+        result["studyCards"] = enhanced["studyCards"]
+        result["motherCards"] = enhanced["motherCards"]
+        result["styleProfile"] = enhanced["styleProfile"]
+        result["referenceRhythm"] = enhanced["referenceRhythm"]
+        result["analysisMode"] = "ai_reference_analysis"
+        analysis_id = str(uuid4())
+        result["analysisId"] = analysis_id
+        root = get_settings().global_root / "breakdowns" / analysis_id
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "source.txt").write_bytes(raw)
+        (root / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        job["result"] = result
+        job["status"] = "completed"
+        _report_breakdown_job(job_id, "拆书研究完成，章节卡、节奏档案、母卡和风格研究已保存。")
+    except Exception as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc) or "AI 拆书分析失败，请重试。"
+        _report_breakdown_job(job_id, job["error"])
+
+
 async def _analyze_reference_with_ai(
-    *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]]
+    *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]], progress: ProgressReporter | None = None
 ) -> tuple[dict[str, Any] | None, str]:
     """Analyze complete first-ten chapters through chunk extraction then aggregation."""
+    report = progress or (lambda _content: None)
     try:
-        chunk_analyses = await _analyze_chunks_with_ai(chapter_chunks)
+        report("拆书规划 Agent 正在逐块提炼章节事实。")
+        chunk_analyses = await _analyze_chunks_with_ai(chapter_chunks, progress=report)
     except asyncio.TimeoutError:
         return None, "AI 拆书分析超时：参考书前十章较长，请稍后重试。"
     except Exception:
         return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
     try:
+        report("分块事实已完成，正在汇总十张章节研究卡。")
         study_cards = await _build_study_cards_with_ai(result, chunk_analyses)
     except asyncio.TimeoutError:
         return None, "AI 章节研究卡生成超时：请稍后重试。"
     except Exception:
         return None, "AI 章节研究卡生成失败：请确认模型服务可用后重试。"
     try:
+        report("章节研究卡已完成，正在提炼母卡与写作风格。")
         materials = await _build_mother_cards_and_style_with_ai(study_cards)
     except asyncio.TimeoutError:
         return None, "AI 母卡与风格汇总超时：请稍后重试。"
@@ -254,6 +296,7 @@ async def _analyze_reference_with_ai(
     if not materials:
         return None, "AI 返回的母卡或风格结构不完整，请重试。"
     try:
+        report("母卡与风格研究已完成，正在生成逐章节奏档案。")
         reference_rhythm = await get_breakdown_planning_agent().build_reference_rhythm(study_cards)
     except asyncio.TimeoutError:
         return None, "AI 逐章节奏档案生成超时：请稍后重试。"
@@ -262,8 +305,18 @@ async def _analyze_reference_with_ai(
     if not reference_rhythm:
         return None, "AI 返回的逐章节奏档案不完整，请重试。"
     source_text = "".join(str(chunk.get("text") or "") for chunk in chapter_chunks if isinstance(chunk, dict))
-    if _reference_content_overlap(reference_rhythm, source_text):
-        return None, "AI 逐章节奏档案混入了参考书内容，已拒绝保存。请重新分析。"
+    overlap = _reference_content_overlap(reference_rhythm, source_text)
+    if overlap:
+        try:
+            report("节奏档案命中参考书短语，正在进行安全改写，不重复前面的章节研究。")
+            reference_rhythm = await get_breakdown_planning_agent().sanitize_reference_rhythm(reference_rhythm, [overlap])
+        except asyncio.TimeoutError:
+            return None, "AI 节奏档案安全改写超时；章节研究已完成，但本次无法生成安全节奏档案。"
+        except Exception:
+            return None, "AI 节奏档案安全改写失败；章节研究已完成，但本次无法生成安全节奏档案。"
+        if not reference_rhythm or _reference_content_overlap(reference_rhythm, source_text):
+            return None, "AI 节奏档案仍含参考书内容，已保留安全边界并拒绝写入。"
+    report("逐章节奏档案已通过安全检查。")
     return {"studyCards": study_cards, "referenceRhythm": reference_rhythm, **materials}, ""
 
 
@@ -344,9 +397,12 @@ async def _build_mother_cards_and_style_with_ai(study_cards: list[dict[str, Any]
     return _normalize_mother_cards_and_style(payload)
 
 
-async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]], *, progress: ProgressReporter | None = None) -> list[dict[str, Any]]:
     # Smaller inputs and restrained concurrency keep slow model providers from queueing out.
     semaphore = asyncio.Semaphore(2)
+    completed = 0
+    completed_lock = asyncio.Lock()
+    report = progress or (lambda _content: None)
 
     async def analyze_once(chunk: dict[str, Any]) -> dict[str, Any]:
         prompt = {
@@ -382,12 +438,18 @@ async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str
         }
 
     async def analyze_chunk(chunk: dict[str, Any]) -> list[dict[str, Any]]:
+        nonlocal completed
         try:
-            return [await analyze_once(chunk)]
+            item = await analyze_once(chunk)
+            async with completed_lock:
+                completed += 1
+                report(f"已完成 {completed}/{len(chunks)} 个章节分析块。")
+            return [item]
         except asyncio.TimeoutError:
             children = _split_timed_out_chunk(chunk)
             if not children:
                 raise
+            report(f"第 {chunk.get('chapterIndex')} 章的一个分析块响应较慢，已自动细分重试。")
             # Do not discard a whole ten-chapter study because one slow request timed out.
             results = await asyncio.gather(*(analyze_chunk(child) for child in children))
             return [item for group in results for item in group]

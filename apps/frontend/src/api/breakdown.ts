@@ -107,13 +107,32 @@ export interface BreakdownHistoryItem {
   updatedAt: number;
 }
 
-export async function analyzeBreakdown(fileName: string, contentBase64: string): Promise<ApiResult<BreakdownResult>> {
-  const response = await apiClient.post<ApiEnvelope<BreakdownResult>>("/breakdown/analyze", {
+export interface BreakdownJobEvent {
+  id: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface BreakdownJob {
+  jobId: string;
+  status: "running" | "completed" | "failed";
+  events: BreakdownJobEvent[];
+  result: BreakdownResult | null;
+  error: string;
+}
+
+export async function analyzeBreakdown(fileName: string, contentBase64: string): Promise<ApiResult<{ jobId: string; status: string }>> {
+  const response = await apiClient.post<ApiEnvelope<{ jobId: string; status: string }>>("/breakdown/analyze", {
     fileName,
     contentBase64,
     options: { chapterPattern: "auto" }
-  }, { timeout: 600000 });
+  }, { timeout: 60000 });
   return unwrapEnvelope(response.data, "拆书分析失败。");
+}
+
+export async function fetchBreakdownJob(jobId: string): Promise<ApiResult<BreakdownJob>> {
+  const response = await apiClient.get<ApiEnvelope<BreakdownJob>>(`/breakdown/jobs/${encodeURIComponent(jobId)}`);
+  return unwrapEnvelope(response.data, "拆书任务状态加载失败。");
 }
 
 export async function generateNewBookIdeas(payload: {
