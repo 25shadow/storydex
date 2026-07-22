@@ -1,0 +1,91 @@
+import { apiClient, unwrapEnvelope } from "@/api/client";
+import type { ApiEnvelope, ApiResult } from "@/types/api";
+
+export interface BreakdownChapter {
+  index: number;
+  title: string;
+  startLine: number | null;
+  endLine: number | null;
+  characterCount: number;
+  evidence: Record<string, number>;
+}
+
+export interface BreakdownResult {
+  analysisId: string;
+  fileName: string;
+  encoding: string;
+  characterCount: number;
+  lineCount: number;
+  chapterCount: number;
+  chapters: BreakdownChapter[];
+  referenceChapterLimit: number;
+  selectedChapters: BreakdownChapter[];
+  studyCards: StudyCard[];
+  motherCards: MotherCard[];
+  warnings: string[];
+  status: string;
+  nextStages: string[];
+}
+
+export interface StudyCard {
+  id: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  function: string;
+  evidence: Record<string, number>;
+  status: string;
+}
+
+export interface MotherCard {
+  id: string;
+  title: string;
+  type: string;
+  mechanism: string;
+  useFor: string[];
+  doNotReuse: string[];
+}
+
+export interface NewBookIdea {
+  id: string;
+  title: string;
+  logline: string;
+  genre: string;
+  tone: string;
+  targetAudience: string;
+  storyEngine: string;
+  openingPlan: string;
+  derivedFrom: string[];
+  derivationMethods: string[];
+  originalityConstraints: string[];
+}
+
+export interface IdeaGenerationResult {
+  ideaRunId: string;
+  analysisId: string;
+  projectName: string;
+  linkedProject: string;
+  generationMode: string;
+  notice: string;
+  ideas: NewBookIdea[];
+}
+
+export async function analyzeBreakdown(fileName: string, contentBase64: string): Promise<ApiResult<BreakdownResult>> {
+  const response = await apiClient.post<ApiEnvelope<BreakdownResult>>("/breakdown/analyze", {
+    fileName,
+    contentBase64,
+    options: { chapterPattern: "auto" }
+  });
+  return unwrapEnvelope(response.data, "拆书分析失败。");
+}
+
+export async function generateNewBookIdeas(payload: {
+  analysisId: string;
+  motherCardIds: string[];
+  projectName: string;
+  genre: string;
+  tone: string;
+  targetAudience: string;
+}): Promise<ApiResult<IdeaGenerationResult>> {
+  const response = await apiClient.post<ApiEnvelope<IdeaGenerationResult>>("/breakdown/ideas/generate", payload);
+  return unwrapEnvelope(response.data, "新书脑洞生成失败。");
+}

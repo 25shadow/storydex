@@ -118,7 +118,7 @@ const topItems: ActivityItem[] = [
 ];
 
 const bottomItems: ActivityItem[] = [
-  { id: "export", label: "导出", icon: "upload" }
+  { id: "breakdown", label: "拆书", icon: "menu_book" }
 ];
 
 onMounted(() => {
