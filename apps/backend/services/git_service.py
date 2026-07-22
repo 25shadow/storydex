@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import os
+import shutil
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -924,6 +925,15 @@ class GitService:
             seen.add(key)
             if resolved.exists() and resolved.is_file():
                 return str(resolved)
+
+        # macOS and Linux desktop builds use the locally installed Git rather
+        # than the Windows-only MinGit bundle. Recovery points remain local.
+        for candidate in (shutil.which("git"), "/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"):
+            if not candidate:
+                continue
+            path = Path(candidate).expanduser()
+            if path.exists() and path.is_file():
+                return str(path)
         return ""
 
     @staticmethod
