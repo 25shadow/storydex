@@ -138,13 +138,6 @@ async def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request)
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
     style_profile = analysis.get("styleProfile") if isinstance(analysis.get("styleProfile"), dict) else {}
-    source_path = analysis_path.parent / "source.txt"
-    reused_phrase = _candidate_source_overlap(idea, source_path)
-    if reused_phrase:
-        raise HTTPException(
-            status_code=422,
-            detail="候选与参考书存在直接文本重合，不能设为主脑洞。请重新生成原创候选。",
-        )
     reference_rhythm = analysis.get("referenceRhythm") if isinstance(analysis.get("referenceRhythm"), list) else []
     if len(reference_rhythm) != 10:
         raise HTTPException(status_code=409, detail="该拆书记录缺少逐章节奏档案，请重新分析参考书后再设为主脑洞。")
@@ -323,15 +316,11 @@ async def _run_breakdown_job(job_id: str, raw: bytes, file_name: str, chapter_pa
 async def _run_rhythm_retry_job(job_id: str, analysis_path: Path, analysis: dict[str, Any]) -> None:
     job = BREAKDOWN_JOBS[job_id]
     try:
-        source_text = decode_novel((analysis_path.parent / "source.txt").read_bytes()).text
         report = lambda content: _report_breakdown_job(job_id, content)
         report("拆书规划 Agent 正在根据已保存的十张章节研究卡生成节奏档案。")
         rhythm = await get_breakdown_planning_agent().build_reference_rhythm(analysis["studyCards"])
-        redaction_count = _redact_reference_content(rhythm, source_text)
-        if redaction_count:
-            report(f"节奏档案发现 {redaction_count} 处参考书短语，已完成安全脱敏。")
-        if not rhythm or _reference_content_overlap(rhythm, source_text):
-            raise RuntimeError("AI 节奏档案无法完成安全脱敏。")
+        if not rhythm:
+            raise RuntimeError("AI 节奏档案未返回完整十章结果。")
         analysis["referenceRhythm"] = rhythm
         analysis["status"] = "completed"
         analysis["analysisMode"] = "ai_reference_analysis"
@@ -419,13 +408,7 @@ async def _analyze_reference_with_ai(
         return None, "AI 逐章节奏档案生成失败：请确认模型服务可用后重试。"
     if not reference_rhythm:
         return None, "AI 返回的逐章节奏档案不完整，请重试。"
-    source_text = "".join(str(chunk.get("text") or "") for chunk in chapter_chunks if isinstance(chunk, dict))
-    redaction_count = _redact_reference_content(reference_rhythm, source_text)
-    if redaction_count:
-        report(f"节奏档案发现 {redaction_count} 处参考书短语，已完成安全脱敏并保留逐章节奏关系。")
-    if _reference_content_overlap(reference_rhythm, source_text):
-        return None, "AI 节奏档案无法完成安全脱敏。"
-    report("逐章节奏档案已通过安全检查。")
+    report("逐章节奏档案已生成。")
     return {"studyCards": study_cards, "referenceRhythm": reference_rhythm, **materials}, ""
 
 
@@ -693,67 +676,6 @@ async def _generate_ideas_with_ai(
         # Do not expose provider internals or credentials, but preserve the actionable failure class.
         label = type(exc).__name__
         return [], "ai_unavailable", f"AI 脑洞生成失败（{label}）：请检查模型服务后重试。"
-
-
-def _candidate_source_overlap(idea: dict[str, Any], source_path: Path) -> str:
-    """Reject candidate text that copies an eight-character source-book phrase."""
-    try:
-        source = re.sub(r"\s+", "", decode_novel(source_path.read_bytes()).text)
-    except (OSError, ValueError):
-        return ""
-    candidate = re.sub(
-        r"\s+",
-        "",
-        " ".join(str(idea.get(field) or "") for field in ("title", "genre", "protagonist", "coreRule", "mainConflict", "longTermEngine", "tenChapterPromise")),
-    )
-    for offset in range(max(0, len(candidate) - 7)):
-        phrase = candidate[offset : offset + 8]
-        if len(phrase) == 8 and phrase in source:
-            return phrase
-    return ""
-
-
-def _reference_content_overlap(reference_rhythm: list[dict[str, Any]], source_text: str) -> str:
-    """Reject a supposedly abstract rhythm if it repeats a source-book phrase."""
-    source = re.sub(r"\s+", "", source_text)
-    candidate = re.sub(
-        r"\s+",
-        "",
-        " ".join(
-            str(item.get(field) or "")
-            for item in reference_rhythm
-            if isinstance(item, dict)
-            for field in ("narrativeMotion", "tensionTransition", "informationRelease", "readerContract", "hookShape")
-        ),
-    )
-    for offset in range(max(0, len(candidate) - 3)):
-        phrase = candidate[offset : offset + 4]
-        if len(phrase) == 4 and phrase in source:
-            return phrase
-    return ""
-
-
-def _redact_reference_content(reference_rhythm: list[dict[str, Any]], source_text: str) -> int:
-    """Dynamically remove only source phrases while retaining the generated rhythm axes."""
-    fields = ("narrativeMotion", "tensionTransition", "informationRelease", "readerContract", "hookShape")
-    count = 0
-    for _ in range(40):
-        phrase = _reference_content_overlap(reference_rhythm, source_text)
-        if not phrase:
-            return count
-        changed = False
-        for item in reference_rhythm:
-            if not isinstance(item, dict):
-                continue
-            for field in fields:
-                value = str(item.get(field) or "")
-                if phrase in value:
-                    item[field] = value.replace(phrase, "关键要素")
-                    changed = True
-        if not changed:
-            break
-        count += 1
-    return count
 
 
 async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:

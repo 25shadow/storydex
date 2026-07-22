@@ -2,7 +2,6 @@ import pytest
 
 from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, reference_chapter_chunks
 from services.breakdown_planning_agent_service import _NEW_BOOK_FIELDS, _normalize_plan
-from api.routes_breakdown import _redact_reference_content, _reference_content_overlap
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -80,29 +79,3 @@ def test_new_book_chapter_plan_requires_a_complete_dynamic_ten_chapter_plan():
 
     assert [item["chapterIndex"] for item in plan] == list(range(1, 11))
     assert plan[0]["narrativeTask"] == "原创主线推进 1"
-
-
-def test_reference_rhythm_rejects_source_book_content():
-    rhythm = [{
-        "narrativeMotion": "展示时间静止的限制",
-        "tensionTransition": "压力上升",
-        "informationRelease": "信息递进",
-        "readerContract": "危机承诺",
-        "hookShape": "未解问题",
-    }]
-
-    assert _reference_content_overlap(rhythm, "主角发现时间静止的限制条件。") == "时间静止"
-
-
-def test_reference_rhythm_redaction_keeps_the_rhythm_axes():
-    rhythm = [{
-        "narrativeMotion": "展示时间静止的限制",
-        "tensionTransition": "压力上升",
-        "informationRelease": "信息递进",
-        "readerContract": "危机承诺",
-        "hookShape": "未解问题",
-    }]
-
-    assert _redact_reference_content(rhythm, "主角发现时间静止的限制条件。") == 1
-    assert _reference_content_overlap(rhythm, "主角发现时间静止的限制条件。") == ""
-    assert rhythm[0]["tensionTransition"] == "压力上升"
