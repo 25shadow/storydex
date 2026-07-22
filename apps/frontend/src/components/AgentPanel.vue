@@ -14,7 +14,7 @@
         <button class="coomi-icon-btn" type="button" title="Settings" @click="configPanelOpen = true">
           <span class="material-symbols-rounded">settings</span>
         </button>
-        <div class="coomi-run-state" :class="{ running: agentStore.isRunning }">
+        <div class="coomi-run-state" :class="{ running: agentStore.isRunning || breakdownAgentStore.isRunning }">
           <span class="coomi-dot"></span>
           <span>{{ headerStatusLabel }}</span>
         </div>
@@ -54,6 +54,8 @@
           </button>
         </div>
       </section>
+
+      <BreakdownAgentActivity v-else-if="breakdownAgentStore.hasTask" />
 
       <section v-else-if="conversationRuns.length === 0" class="coomi-welcome">
         <img src="@/assets/storydex_icon_01.png" alt="Storydex" />
@@ -591,8 +593,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 import AgentExecutionFloatBar from "@/components/AgentExecutionFloatBar.vue";
+import BreakdownAgentActivity from "@/components/BreakdownAgentActivity.vue";
 import CoomiConfigPanel from "@/components/CoomiConfigPanel.vue";
 import { useAgentStore } from "@/stores/agent";
+import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 import { useGitStore } from "@/stores/git";
 import { useWorkspaceStore } from "@/stores/workspace";
 import {
@@ -637,6 +641,7 @@ type ApprovalDraft = { value: string; text: string };
 
 const TOOL_CHUNK_SIZE = 5;
 const agentStore = useAgentStore();
+const breakdownAgentStore = useBreakdownAgentStore();
 const gitStore = useGitStore();
 const workspaceStore = useWorkspaceStore();
 const configPanelOpen = ref(false);
@@ -696,6 +701,9 @@ const executionFloatSignature = computed(() => {
 });
 const executionFloatVisible = computed(() => Boolean(executionFloatSignature.value));
 const headerStatusLabel = computed(() => {
+  if (breakdownAgentStore.isRunning) {
+    return "拆书规划 Agent · 执行中";
+  }
   if (!agentStore.isRunning) {
     return "Coomi · Ready";
   }

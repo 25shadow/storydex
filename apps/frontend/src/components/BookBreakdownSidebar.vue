@@ -119,6 +119,7 @@ import { computed, ref, watch } from "vue";
 import axios from "axios";
 import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 
 const props = defineProps<{ analysisId?: string }>();
 
@@ -138,6 +139,7 @@ const ideaResult = ref<IdeaGenerationResult | null>(null);
 const ideaSelecting = ref(false);
 const selectedIdeaId = ref("");
 const workspaceStore = useWorkspaceStore();
+const breakdownAgentStore = useBreakdownAgentStore();
 const projectName = computed(() => workspaceStore.currentProject?.projectName || "当前 Storydex 项目");
 
 function choose(file: File | undefined): void {
@@ -157,6 +159,8 @@ function clearFile(): void { selectedFile.value = null; result.value = null; ide
 async function startAnalysis(): Promise<void> {
   if (!selectedFile.value) return;
   loading.value = true; errorMessage.value = "";
+  breakdownAgentStore.start("拆书规划 Agent", `已接收《${selectedFile.value.name}》，开始解析前十章。`);
+  breakdownAgentStore.report("已提交章节研究、抽象节奏档案、母卡与风格研究任务。");
   try {
     const buffer = await selectedFile.value.arrayBuffer();
     let binary = "";
@@ -165,16 +169,19 @@ async function startAnalysis(): Promise<void> {
     const response = await analyzeBreakdown(selectedFile.value.name, btoa(binary));
     result.value = response.data;
     selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);
+    breakdownAgentStore.finish(`前十章研究完成，已生成 ${response.data.studyCards.length} 张章节研究卡和逐章节奏档案。`);
   } catch (error) {
     errorMessage.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 拆书分析失败，请重试。")
       : error instanceof Error ? error.message : "拆书分析失败，请重试。";
+    breakdownAgentStore.fail(errorMessage.value);
   }
   finally { loading.value = false; }
 }
 async function generateIdeas(): Promise<void> {
   if (!result.value || !selectedMotherCardIds.value.length) return;
   ideaLoading.value = true; ideaError.value = "";
+  breakdownAgentStore.start("新书脑洞 Agent", "已接收选择的脑洞母卡，开始生成原创立项候选。");
   try {
     const response = await generateNewBookIdeas({
       analysisId: result.value.analysisId,
@@ -186,10 +193,12 @@ async function generateIdeas(): Promise<void> {
     });
     ideaResult.value = response.data;
     selectedIdeaId.value = "";
+    breakdownAgentStore.finish(`已生成 ${response.data.ideas.length} 条原创立项候选。`);
   } catch (error) {
     ideaError.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 脑洞生成失败，请检查模型配置。")
       : error instanceof Error ? error.message : "新书脑洞生成失败，请重试。";
+    breakdownAgentStore.fail(ideaError.value);
   }
   finally { ideaLoading.value = false; }
 }
@@ -197,6 +206,7 @@ async function selectIdea(ideaId: string): Promise<void> {
   if (!result.value || !ideaResult.value || ideaSelecting.value) return;
   ideaSelecting.value = true;
   ideaError.value = "";
+  breakdownAgentStore.start("拆书规划 Agent", "已确认原创立项，正在按参考书的抽象逐章节奏生成本书前十章规划。");
   try {
     const response = await selectNewBookIdea({
       analysisId: result.value.analysisId,
@@ -204,10 +214,12 @@ async function selectIdea(ideaId: string): Promise<void> {
       ideaId
     });
     selectedIdeaId.value = response.data.selectedIdeaId;
+    breakdownAgentStore.finish(`新书前十章规划已关联当前项目，共 ${response.data.chapterStructureCount} 章。`);
   } catch (error) {
     ideaError.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "新书脑洞确认失败。")
       : error instanceof Error ? error.message : "新书脑洞确认失败。";
+    breakdownAgentStore.fail(ideaError.value);
   } finally {
     ideaSelecting.value = false;
   }
