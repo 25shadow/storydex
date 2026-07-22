@@ -1,6 +1,6 @@
 import pytest
 
-from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, generate_idea_cards
+from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -50,13 +50,3 @@ def test_reference_analysis_keeps_only_first_ten_chapters_and_builds_cards():
     assert len(result["motherCards"]) == 3
     assert "第10章" in result["selectedChapters"][-1]["title"]
     assert any("前 10 章" in warning for warning in result["warnings"])
-
-
-def test_new_book_ideas_keep_source_chain_and_originality_constraints():
-    cards = analyze_novel("第一章 开始\n正文".encode(), "hot-book.txt")["motherCards"]
-    ideas = generate_idea_cards(cards[:2], project_name="新书", genre="都市悬疑", tone="紧张", target_audience="连载读者")
-
-    assert len(ideas) == 6
-    assert ideas[0]["derivedFrom"] == ["mother-opening-contract", "mother-escalation-engine"]
-    assert "不得复用参考书人物、设定、事件链或表达" in ideas[0]["originalityConstraints"]
-    assert ideas[0]["genre"] == "都市悬疑"

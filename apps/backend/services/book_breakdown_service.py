@@ -137,8 +137,6 @@ def _build_study_cards(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for position, chapter in enumerate(chapters[:REFERENCE_CHAPTER_LIMIT])
     ]
-
-
 def _build_mother_cards(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     chapter_range = f"前 {len(chapters)} 章" if chapters else "文本开篇"
     return [
@@ -166,40 +164,4 @@ def _build_mother_cards(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "useFor": ["双主角", "对手关系", "秘密与误解"],
             "doNotReuse": ["原书角色关系", "原书角色名称", "原书关键场面"],
         },
-    ]
-
-
-def generate_idea_cards(
-    mother_cards: list[dict[str, Any]], *, project_name: str, genre: str, tone: str, target_audience: str
-) -> list[dict[str, Any]]:
-    """Generate safe local idea candidates from abstract mechanisms only."""
-    selected_titles = "、".join(str(card.get("title") or "") for card in mother_cards) or "开篇创作机制"
-    genre_label = genre or "原创类型小说"
-    tone_label = tone or "紧张而有情绪张力"
-    audience_label = target_audience or "目标读者"
-    seeds = [
-        ("失物招领员的记忆债务", "每找回一件失物，主角就替失主遗忘一段自己的人生。", "每件失物都牵出一笔记忆债务与一个新秘密。"),
-        ("倒计时修复局", "主角能修复他人最糟的一天，却会让另一人的未来缩短一天。", "每次修复都迫使主角在救谁与牺牲谁之间做选择。"),
-        ("边境地图的夜行线", "一名地图绘制员发现城市边界会在夜里吞没记得太多的人。", "每次重新绘图都揭开失踪者真相，也让主角更接近边界。"),
-        ("谎言听证会", "主角能听见谎言背后的真实情绪，却无法分辨谁在利用这项能力。", "每场听证会解决案件，同时暴露主角自己的身份风险。"),
-        ("借住在明天的人", "主角每晚会在陌生人的明天醒来，并带回一条会改变现实的消息。", "消息越准确，主角与重要之人的关系越难维持。"),
-        ("无名委托人的第十封信", "一名临时写手收到十封必须按顺序完成的匿名委托。", "每完成一封信，主角获得盟友，也失去一个可以回头的选项。"),
-    ]
-    source_ids = [str(card.get("id") or "") for card in mother_cards]
-    return [
-        {
-            "id": f"idea-{index + 1}",
-            "title": title,
-            "logline": f"{genre_label}：{logline}",
-            "genre": genre_label,
-            "tone": tone_label,
-            "targetAudience": audience_label,
-            "storyEngine": engine,
-            "openingPlan": "第 1 章展示异常与代价；第 3 章伤及重要关系；第 5 章做出不可逆选择；第 10 章揭示更高层级危机。",
-            "derivedFrom": source_ids,
-            "derivationMethods": ["题材替换", "代价强化", "关系重构"],
-            "originalityConstraints": ["不得复用参考书人物、设定、事件链或表达", "仅使用抽象机制", "正文创作不注入参考原文"],
-            "sourceSummary": selected_titles,
-        }
-        for index, (title, logline, engine) in enumerate(seeds)
     ]

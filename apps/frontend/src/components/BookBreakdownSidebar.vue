@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import axios from "axios";
 import { analyzeBreakdown, generateNewBookIdeas, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
 
@@ -144,7 +145,11 @@ async function generateIdeas(): Promise<void> {
       targetAudience: ideaAudience.value
     });
     ideaResult.value = response.data;
-  } catch (error) { ideaError.value = error instanceof Error ? error.message : "新书脑洞生成失败，请重试。"; }
+  } catch (error) {
+    ideaError.value = axios.isAxiosError(error)
+      ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 脑洞生成失败，请检查模型配置。")
+      : error instanceof Error ? error.message : "新书脑洞生成失败，请重试。";
+  }
   finally { ideaLoading.value = false; }
 }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }

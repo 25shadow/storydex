@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.response import ApiTrace, success_response
 from core.config import get_settings
-from services.book_breakdown_service import analyze_novel, generate_idea_cards
+from services.book_breakdown_service import analyze_novel
 from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
@@ -88,21 +88,18 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
         raise HTTPException(status_code=400, detail="请选择至少一张有效的脑洞母卡。")
 
     idea_run_id = str(uuid4())
-    fallback_ideas = generate_idea_cards(
-        cards,
-        project_name=payload.project_name,
-        genre=payload.genre,
-        tone=payload.tone,
-        target_audience=payload.target_audience,
-    )
     ideas, generation_mode = await _generate_ideas_with_ai(
         cards=cards,
-        fallback_ideas=fallback_ideas,
         project_name=payload.project_name,
         genre=payload.genre,
         tone=payload.tone,
         target_audience=payload.target_audience,
     )
+    if not ideas:
+        raise HTTPException(
+            status_code=503,
+            detail="AI 脑洞生成不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
+        )
     result = {
         "ideaRunId": idea_run_id,
         "analysisId": payload.analysis_id,
@@ -131,13 +128,12 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
 async def _generate_ideas_with_ai(
     *,
     cards: list[dict[str, Any]],
-    fallback_ideas: list[dict[str, Any]],
     project_name: str,
     genre: str,
     tone: str,
     target_audience: str,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Use the configured Coomi provider, with an explicit safe local fallback."""
+    """Use the configured Coomi provider only; never synthesize fallback ideas."""
     prompt = {
         "projectName": project_name,
         "genre": genre,
@@ -167,12 +163,12 @@ async def _generate_ideas_with_ai(
                 provider = get_replayable_llm_provider()
                 response = await asyncio.wait_for(_call_provider_chat(provider, messages, None), timeout=35)
         parsed = _extract_idea_array(str(getattr(response, "content", "") or ""))
-        ideas = _normalize_ai_ideas(parsed, fallback_ideas, cards)
+        ideas = _normalize_ai_ideas(parsed, cards)
         if ideas:
             return ideas, "ai_originality_guard"
     except Exception:
         pass
-    return fallback_ideas, "local_originality_guard"
+    return [], "ai_unavailable"
 
 
 def _extract_idea_array(content: str) -> list[dict[str, Any]]:
@@ -184,7 +180,7 @@ def _extract_idea_array(content: str) -> list[dict[str, Any]]:
 
 
 def _normalize_ai_ideas(
-    ideas: list[dict[str, Any]], fallback_ideas: list[dict[str, Any]], cards: list[dict[str, Any]]
+    ideas: list[dict[str, Any]], cards: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     source_ids = [str(card.get("id") or "") for card in cards]
     normalized: list[dict[str, Any]] = []
@@ -195,14 +191,14 @@ def _normalize_ai_ideas(
         opening_plan = str(item.get("openingPlan") or "").strip()
         if not all((title, logline, story_engine, opening_plan)):
             continue
-        base = fallback_ideas[index % len(fallback_ideas)]
         normalized.append({
-            **base,
             "id": f"idea-{index + 1}",
             "title": title[:100],
             "logline": logline[:500],
             "storyEngine": story_engine[:500],
             "openingPlan": opening_plan[:500],
             "derivedFrom": source_ids,
+            "derivationMethods": ["AI 抽象发散"],
+            "originalityConstraints": ["不得复用参考书人物、设定、事件链或表达", "仅使用抽象机制", "正文创作不注入参考原文"],
         })
     return normalized
