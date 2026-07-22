@@ -74,6 +74,12 @@ export interface IdeaGenerationResult {
   ideas: NewBookIdea[];
 }
 
+export interface IdeaSelectionResult {
+  selectedIdeaId: string;
+  projectName: string;
+  idea: NewBookIdea;
+}
+
 export interface BreakdownHistoryItem {
   analysisId: string;
   fileName: string;
@@ -112,4 +118,13 @@ export async function fetchBreakdownHistory(): Promise<ApiResult<{ items: Breakd
 export async function fetchBreakdown(analysisId: string): Promise<ApiResult<BreakdownResult>> {
   const response = await apiClient.get<ApiEnvelope<BreakdownResult>>(`/breakdown/${encodeURIComponent(analysisId)}`);
   return unwrapEnvelope(response.data, "拆书记录加载失败。");
+}
+
+export async function selectNewBookIdea(payload: {
+  analysisId: string;
+  ideaRunId: string;
+  ideaId: string;
+}): Promise<ApiResult<IdeaSelectionResult>> {
+  const response = await apiClient.post<ApiEnvelope<IdeaSelectionResult>>("/breakdown/ideas/select", payload);
+  return unwrapEnvelope(response.data, "新书脑洞确认失败。");
 }

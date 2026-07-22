@@ -107,6 +107,31 @@ class StorydexContextAssemblerService:
             trace_source=sources[-1],
         )
 
+        source_started = time.perf_counter()
+        main_idea_block, main_idea_paths = self._render_active_brainstorm(root)
+        sources.append(
+            self._source(
+                "active_brainstorm",
+                main_idea_paths,
+                candidate=main_idea_block,
+                policy="selected_project_idea_only",
+                elapsed_ms=(time.perf_counter() - source_started) * 1000,
+            )
+        )
+        self._append_policy_block(
+            blocks,
+            enabled=effective_policy.base_story_context,
+            block_id="active_brainstorm",
+            title="Active new-book premise",
+            kind="brainstorm",
+            content=main_idea_block,
+            source_paths=main_idea_paths,
+            max_chars=900,
+            max_total_chars=max_total_chars,
+            notes=notes,
+            trace_source=sources[-1],
+        )
+
         # 最近正文片段紧随预设：续写时上文是第一上下文，
         # 不能被后续硬约束/记忆块把预算挤占殆尽。
         source_started = time.perf_counter()
@@ -529,6 +554,35 @@ class StorydexContextAssemblerService:
             except ValueError:
                 continue
         return paths
+
+    @staticmethod
+    def _render_active_brainstorm(root: Path) -> Tuple[str, List[str]]:
+        relative_path = ".storydex/references/brainstorm/active.json"
+        path = root / relative_path
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return "", []
+        idea = payload.get("idea") if isinstance(payload.get("idea"), dict) else {}
+        title = str(idea.get("title") or "").strip()
+        logline = str(idea.get("logline") or "").strip()
+        engine = str(idea.get("storyEngine") or "").strip()
+        opening = str(idea.get("openingPlan") or "").strip()
+        if not all((title, logline, engine, opening)):
+            return "", []
+        lines = [
+            "[Active New-Book Premise]",
+            "This is the project's selected original premise. Develop it with new characters, settings, and events.",
+            f"Title: {title[:100]}",
+            f"Logline: {logline[:500]}",
+            f"Story engine: {engine[:500]}",
+            f"Opening plan: {opening[:500]}",
+        ]
+        constraints = idea.get("originalityConstraints") if isinstance(idea.get("originalityConstraints"), list) else []
+        cleaned_constraints = [str(item).strip()[:180] for item in constraints if str(item).strip()]
+        if cleaned_constraints:
+            lines.append("Originality guard: " + "; ".join(cleaned_constraints[:3]))
+        return "\n".join(lines), [relative_path]
 
     @staticmethod
     def _build_preset_runtime_context(

@@ -5,6 +5,7 @@ import binascii
 import asyncio
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -39,6 +40,13 @@ class IdeaGenerationRequest(BaseModel):
     genre: str = ""
     tone: str = ""
     target_audience: str = Field(default="", alias="targetAudience")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class IdeaSelectionRequest(BaseModel):
+    analysis_id: str = Field(alias="analysisId")
+    idea_run_id: str = Field(alias="ideaRunId")
+    idea_id: str = Field(alias="ideaId")
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -86,6 +94,43 @@ def breakdown_detail(analysis_id: str, request: Request) -> dict[str, Any]:
         data=result,
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
         audit=[{"action": "read_breakdown", "analysisId": analysis_id}],
+    ).model_dump(by_alias=True)
+
+
+@router.post("/breakdown/ideas/select")
+def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", payload.analysis_id) or not re.fullmatch(r"[0-9a-fA-F-]{36}", payload.idea_run_id):
+        raise HTTPException(status_code=400, detail="脑洞记录标识无效。")
+    run_path = get_settings().global_root / "breakdowns" / payload.analysis_id / "idea-runs" / f"{payload.idea_run_id}.json"
+    try:
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到这次脑洞生成记录。") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="脑洞生成记录无法读取。") from exc
+    ideas = run.get("ideas") if isinstance(run.get("ideas"), list) else []
+    idea = next((item for item in ideas if isinstance(item, dict) and str(item.get("id") or "") == payload.idea_id), None)
+    if idea is None:
+        raise HTTPException(status_code=404, detail="未找到所选的新书脑洞。")
+
+    project = get_project_service().current_project()
+    project_root = Path(project["workspaceRoot"])
+    active_path = project_root / ".storydex" / "references" / "brainstorm" / "active.json"
+    active_path.parent.mkdir(parents=True, exist_ok=True)
+    selected = {
+        "status": "active",
+        "selectedAt": datetime.now(timezone.utc).isoformat(),
+        "analysisId": payload.analysis_id,
+        "ideaRunId": payload.idea_run_id,
+        "ideaId": payload.idea_id,
+        "projectName": str(project.get("projectName") or project_root.name),
+        "idea": idea,
+    }
+    active_path.write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
+    return success_response(
+        data={"selectedIdeaId": payload.idea_id, "projectName": selected["projectName"], "idea": idea},
+        trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
+        audit=[{"action": "select_breakdown_idea", "analysisId": payload.analysis_id, "ideaRunId": payload.idea_run_id, "ideaId": payload.idea_id}],
     ).model_dump(by_alias=True)
 
 

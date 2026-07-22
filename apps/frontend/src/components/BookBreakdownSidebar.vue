@@ -79,16 +79,23 @@
         <section v-if="ideaResult" class="idea-results">
           <div class="breakdown-next-title">原创脑洞候选</div>
           <p class="breakdown-muted">{{ ideaResult.notice }}</p>
-          <button v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card" :class="{ active: activeIdeaId === idea.id }" type="button" @click="toggleIdea(idea.id)">
+          <div v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card" :class="{ active: activeIdeaId === idea.id }" @click="toggleIdea(idea.id)">
             <strong>{{ idea.title }}</strong>
             <p>{{ idea.logline }}</p>
             <small>{{ idea.storyEngine }}</small>
             <em>{{ idea.derivationMethods.join(" · ") }}</em>
             <div v-if="activeIdeaId === idea.id" class="card-details">
               <p><b>前十章启动：</b>{{ idea.openingPlan }}</p>
-              <p><b>原创限制：</b>{{ idea.originalityConstraints.join("；") }}</p>
             </div>
-          </button>
+            <button
+              class="idea-confirm"
+              type="button"
+              :disabled="ideaSelecting || selectedIdeaId === idea.id"
+              @click.stop="selectIdea(idea.id)"
+            >
+              {{ selectedIdeaId === idea.id ? "已设为本书主脑洞" : ideaSelecting ? "正在确认..." : "设为本书主脑洞" }}
+            </button>
+          </div>
         </section>
       </section>
     </section>
@@ -98,7 +105,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import axios from "axios";
-import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
 
 const props = defineProps<{ analysisId?: string }>();
@@ -116,6 +123,8 @@ const activeIdeaId = ref("");
 const ideaLoading = ref(false);
 const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
+const ideaSelecting = ref(false);
+const selectedIdeaId = ref("");
 const workspaceStore = useWorkspaceStore();
 const projectName = computed(() => workspaceStore.currentProject?.projectName || "当前 Storydex 项目");
 
@@ -124,6 +133,7 @@ function choose(file: File | undefined): void {
   errorMessage.value = "";
   result.value = null;
   ideaResult.value = null;
+  selectedIdeaId.value = "";
   selectedMotherCardIds.value = [];
   activeStudyCardId.value = "";
   activeMotherCardId.value = "";
@@ -131,7 +141,7 @@ function choose(file: File | undefined): void {
 }
 function handleFileChange(event: Event): void { choose((event.target as HTMLInputElement).files?.[0]); }
 function handleDrop(event: DragEvent): void { dragging.value = false; choose(event.dataTransfer?.files?.[0]); }
-function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedMotherCardIds.value = []; activeStudyCardId.value = ""; activeMotherCardId.value = ""; activeIdeaId.value = ""; if (fileInput.value) fileInput.value.value = ""; }
+function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedIdeaId.value = ""; selectedMotherCardIds.value = []; activeStudyCardId.value = ""; activeMotherCardId.value = ""; activeIdeaId.value = ""; if (fileInput.value) fileInput.value.value = ""; }
 async function startAnalysis(): Promise<void> {
   if (!selectedFile.value) return;
   loading.value = true; errorMessage.value = "";
@@ -163,6 +173,7 @@ async function generateIdeas(): Promise<void> {
       targetAudience: ""
     });
     ideaResult.value = response.data;
+    selectedIdeaId.value = "";
   } catch (error) {
     ideaError.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 脑洞生成失败，请检查模型配置。")
@@ -170,11 +181,31 @@ async function generateIdeas(): Promise<void> {
   }
   finally { ideaLoading.value = false; }
 }
+async function selectIdea(ideaId: string): Promise<void> {
+  if (!result.value || !ideaResult.value || ideaSelecting.value) return;
+  ideaSelecting.value = true;
+  ideaError.value = "";
+  try {
+    const response = await selectNewBookIdea({
+      analysisId: result.value.analysisId,
+      ideaRunId: ideaResult.value.ideaRunId,
+      ideaId
+    });
+    selectedIdeaId.value = response.data.selectedIdeaId;
+  } catch (error) {
+    ideaError.value = axios.isAxiosError(error)
+      ? String(error.response?.data?.error?.message || error.response?.data?.detail || "新书脑洞确认失败。")
+      : error instanceof Error ? error.message : "新书脑洞确认失败。";
+  } finally {
+    ideaSelecting.value = false;
+  }
+}
 async function loadSavedBreakdown(analysisId: string): Promise<void> {
   if (!analysisId || result.value?.analysisId === analysisId) return;
   loading.value = true;
   errorMessage.value = "";
   ideaResult.value = null;
+  selectedIdeaId.value = "";
   ideaError.value = "";
   activeStudyCardId.value = "";
   activeMotherCardId.value = "";
@@ -247,4 +278,6 @@ h2 { margin: 5px 0; font-size: 20px; }
 .idea-form { margin-top: 14px; }
 .idea-form > p { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .idea-form .breakdown-primary { margin-top: 8px; }
+.idea-confirm { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font: inherit; font-size: 11px; }
+.idea-confirm:disabled { opacity: .65; cursor: default; }
 </style>
