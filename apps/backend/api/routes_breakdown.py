@@ -205,7 +205,7 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
         raise HTTPException(status_code=400, detail="请选择至少一张有效的脑洞母卡。")
 
     idea_run_id = str(uuid4())
-    ideas, generation_mode = await _generate_ideas_with_ai(
+    ideas, generation_mode, generation_error = await _generate_ideas_with_ai(
         cards=cards,
         project_name=payload.project_name,
         genre=payload.genre,
@@ -215,7 +215,7 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
     if not ideas:
         raise HTTPException(
             status_code=503,
-            detail="AI 脑洞生成不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
+            detail=generation_error or "AI 脑洞生成不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
         )
     result = {
         "ideaRunId": idea_run_id,
@@ -249,7 +249,7 @@ async def _generate_ideas_with_ai(
     genre: str,
     tone: str,
     target_audience: str,
-) -> tuple[list[dict[str, Any]], str]:
+) -> tuple[list[dict[str, Any]], str, str]:
     """Use the configured Coomi provider only; never synthesize fallback ideas."""
     prompt = {
         "projectName": project_name,
@@ -274,10 +274,14 @@ async def _generate_ideas_with_ai(
         parsed = _extract_idea_array(str(getattr(response, "content", "") or ""))
         ideas = _normalize_ai_ideas(parsed, cards)
         if ideas:
-            return ideas, "ai_originality_guard"
-    except Exception:
-        pass
-    return [], "ai_unavailable"
+            return ideas, "ai_originality_guard", ""
+        return [], "ai_unavailable", "AI 返回内容不符合脑洞卡格式，请重试。"
+    except asyncio.TimeoutError:
+        return [], "ai_unavailable", "AI 脑洞生成超时：模型响应超过 45 秒，请稍后重试。"
+    except Exception as exc:
+        # Do not expose provider internals or credentials, but preserve the actionable failure class.
+        label = type(exc).__name__
+        return [], "ai_unavailable", f"AI 脑洞生成失败（{label}）：请检查模型服务后重试。"
 
 
 async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:
@@ -293,7 +297,17 @@ async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpos
 
 def _extract_idea_array(content: str) -> list[dict[str, Any]]:
     cleaned = re.sub(r"^\s*\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60\s*$", "", content.strip(), flags=re.I)
-    payload = json.loads(cleaned)
+    payload: Any
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Providers sometimes add a short introduction despite being asked for raw JSON.
+        # Find the outer array without accepting arbitrary non-JSON content as an idea.
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start < 0 or end <= start:
+            raise
+        payload = json.loads(cleaned[start : end + 1])
     if isinstance(payload, dict):
         payload = payload.get("ideas")
     return [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
