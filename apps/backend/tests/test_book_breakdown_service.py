@@ -1,7 +1,7 @@
 import pytest
 
 from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, reference_chapter_chunks
-from api.routes_breakdown import _chapter_structure_reference
+from api.routes_breakdown import _normalize_new_book_chapter_plan
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -63,17 +63,19 @@ def test_reference_chunks_keep_all_text_from_a_long_chapter():
     assert sum(len(item["text"]) for item in chunks) >= 13100
 
 
-def test_chapter_structure_reference_excludes_reference_story_details():
-    reference = _chapter_structure_reference([
+def test_new_book_chapter_plan_requires_a_complete_dynamic_ten_chapter_plan():
+    payload = {"chapters": [
         {
-            "chapterIndex": 1,
-            "structureTag": "规则展示",
-            "function": "通过时间静止的冷却限制和赌局冲突完成设定揭秘。",
-            "conflict": "主角拖延对手以等待冷却结束。",
+            "chapterIndex": index,
+            "narrativeTask": f"原创主线推进 {index}",
+            "conflictProgress": f"原创冲突升级 {index}",
+            "informationProgress": f"原创信息揭示 {index}",
+            "endQuestion": f"原创悬念 {index}",
         }
-    ])
+        for index in range(1, 11)
+    ]}
 
-    assert reference == [{"chapterIndex": 1, "structuralFunction": "规则展示"}]
-    assert "时间静止" not in str(reference)
-    assert "赌局" not in str(reference)
-    assert "冷却" not in str(reference)
+    plan = _normalize_new_book_chapter_plan(payload)
+
+    assert [item["chapterIndex"] for item in plan] == list(range(1, 11))
+    assert plan[0]["narrativeTask"] == "原创主线推进 1"

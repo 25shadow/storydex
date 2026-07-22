@@ -34,7 +34,6 @@ export interface StudyCard {
   chapterIndex: number;
   chapterTitle: string;
   function: string;
-  structureTag?: string;
   evidence: Record<string, number>;
   status: string;
   readerQuestion?: string;
@@ -144,6 +143,6 @@ export async function selectNewBookIdea(payload: {
   ideaRunId: string;
   ideaId: string;
 }): Promise<ApiResult<IdeaSelectionResult>> {
-  const response = await apiClient.post<ApiEnvelope<IdeaSelectionResult>>("/breakdown/ideas/select", payload);
+  const response = await apiClient.post<ApiEnvelope<IdeaSelectionResult>>("/breakdown/ideas/select", payload, { timeout: 150000 });
   return unwrapEnvelope(response.data, "新书脑洞确认失败。");
 }

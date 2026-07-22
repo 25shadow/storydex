@@ -20,11 +20,6 @@ from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
 
-STRUCTURE_TAGS = {
-    "开篇承诺", "人物定位", "规则展示", "目标确立", "压力升级",
-    "关系推进", "信息反转", "代价显现", "局势翻转", "章末悬念",
-}
-
 
 class BreakdownOptions(BaseModel):
     chapter_pattern: str = Field(default="auto", alias="chapterPattern")
@@ -113,7 +108,7 @@ def breakdown_detail(analysis_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.post("/breakdown/ideas/select")
-def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> dict[str, Any]:
+async def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> dict[str, Any]:
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", payload.analysis_id) or not re.fullmatch(r"[0-9a-fA-F-]{36}", payload.idea_run_id):
         raise HTTPException(status_code=400, detail="脑洞记录标识无效。")
     run_path = get_settings().global_root / "breakdowns" / payload.analysis_id / "idea-runs" / f"{payload.idea_run_id}.json"
@@ -138,12 +133,6 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
-    chapter_structure = _chapter_structure_reference(analysis.get("studyCards"))
-    if not chapter_structure:
-        raise HTTPException(
-            status_code=409,
-            detail="该拆书记录来自旧版，十章结构不含安全的抽象标签，不能带入当前项目。请重新分析参考书后再设为主脑洞。",
-        )
     style_profile = analysis.get("styleProfile") if isinstance(analysis.get("styleProfile"), dict) else {}
     source_path = analysis_path.parent / "source.txt"
     reused_phrase = _candidate_source_overlap(idea, source_path)
@@ -151,6 +140,12 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         raise HTTPException(
             status_code=422,
             detail="候选与参考书存在直接文本重合，不能设为主脑洞。请重新生成原创候选。",
+        )
+    chapter_plan, plan_error = await _build_new_book_chapter_plan(idea)
+    if not chapter_plan:
+        raise HTTPException(
+            status_code=503,
+            detail=plan_error or "新书十章规划生成失败，请确认模型服务后重试。",
         )
 
     project = get_project_service().current_project()
@@ -165,7 +160,7 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         "ideaId": payload.idea_id,
         "projectName": str(project.get("projectName") or project_root.name),
         "idea": idea,
-        "chapterStructureReference": chapter_structure,
+        "chapterStructureReference": chapter_plan,
         "writingStyleReference": style_profile,
         "originalityVerified": True,
     }
@@ -175,7 +170,7 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
             "selectedIdeaId": payload.idea_id,
             "projectName": selected["projectName"],
             "idea": idea,
-            "chapterStructureCount": len(chapter_structure),
+            "chapterStructureCount": len(chapter_plan),
         },
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
         audit=[{"action": "select_breakdown_idea", "analysisId": payload.analysis_id, "ideaRunId": payload.idea_run_id, "ideaId": payload.idea_id}],
@@ -265,8 +260,7 @@ async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: lis
             "chunkAnalyses": by_chapter.get(index, []),
             "requirements": [
             "只分析结构机制，不复述原文或引用长段落。",
-                "输出 JSON 对象，字段：structureTag, function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
-                "structureTag 必须且只能从以下标签选择一个：开篇承诺、人物定位、规则展示、目标确立、压力升级、关系推进、信息反转、代价显现、局势翻转、章末悬念。",
+                "输出 JSON 对象，字段：function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
                 "每个字段不超过 180 字。",
             ],
         }
@@ -281,16 +275,12 @@ async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: lis
         fields = ("function", "readerQuestion", "conflict", "informationShift", "relationshipShift", "endHook")
         if not all(str(parsed.get(field) or "").strip() for field in fields):
             raise ValueError(f"第 {index} 章研究卡结构不完整")
-        structure_tag = str(parsed.get("structureTag") or "").strip()
-        if structure_tag not in STRUCTURE_TAGS:
-            raise ValueError(f"第 {index} 章结构标签无效")
         return {
             "id": f"study-chapter-{index}",
             "chapterIndex": index,
             "chapterTitle": str(chapter["title"]),
             "evidence": chapter["evidence"],
             "status": "AI 已分析",
-            "structureTag": structure_tag,
             **{field: str(parsed[field]).strip()[:600] for field in fields},
         }
 
@@ -480,19 +470,52 @@ async def _generate_ideas_with_ai(
         return [], "ai_unavailable", f"AI 脑洞生成失败（{label}）：请检查模型服务后重试。"
 
 
-def _chapter_structure_reference(value: Any) -> list[dict[str, Any]]:
-    """Keep only chapter-level pacing functions, never reference-book story details."""
-    cards = value if isinstance(value, list) else []
-    reference: list[dict[str, Any]] = []
-    for item in cards:
+async def _build_new_book_chapter_plan(idea: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    """Create a new-book plan from the selected original premise, never reference analysis."""
+    premise = {
+        field: str(idea.get(field) or "").strip()[:500]
+        for field in ("title", "genre", "protagonist", "coreRule", "mainConflict", "longTermEngine", "tenChapterPromise")
+    }
+    prompt = {
+        "task": "根据这份已经确认的原创立项，生成本书自己的前十章推进表。",
+        "originalPremise": premise,
+        "requirements": [
+            "输出 chapters 数组，必须恰好 10 项；每项包含 chapterIndex、narrativeTask、conflictProgress、informationProgress、endQuestion。",
+            "每一章必须围绕 originalPremise 的原创人物、规则和冲突展开，不得引用、猜测或补充任何参考书内容。",
+            "十章之间应有连续升级，但具体节奏、揭示顺序和钩子必须服务于这一本新书，不套用固定章节标签或模板。",
+            "各文本字段不超过 100 字；只输出 JSON 对象：{chapters: []}。",
+        ],
+    }
+    try:
+        response = await _call_creative_provider(
+            system="你是原创小说策划编辑。只根据给出的新书立项工作，不接触或复述任何参考作品。",
+            prompt=prompt,
+            purpose="new_book_chapter_plan",
+            timeout=120,
+        )
+        plan = _normalize_new_book_chapter_plan(_extract_json_object(str(getattr(response, "content", "") or "")))
+        if plan:
+            return plan, ""
+        return [], "AI 返回的新书十章规划格式不完整，请重试。"
+    except asyncio.TimeoutError:
+        return [], "新书十章规划超时：模型在 120 秒内未完成，请稍后重试。"
+    except Exception as exc:
+        return [], f"新书十章规划生成失败（{type(exc).__name__}）：请检查模型服务后重试。"
+
+
+def _normalize_new_book_chapter_plan(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
+    plan: list[dict[str, Any]] = []
+    fields = ("narrativeTask", "conflictProgress", "informationProgress", "endQuestion")
+    for item in raw_chapters:
         if not isinstance(item, dict):
             continue
         index = int(item.get("chapterIndex") or 0)
-        structure_tag = str(item.get("structureTag") or "").strip()
-        if index <= 0 or structure_tag not in STRUCTURE_TAGS:
+        if index < 1 or index > 10 or not all(str(item.get(field) or "").strip() for field in fields):
             continue
-        reference.append({"chapterIndex": index, "structuralFunction": structure_tag})
-    return reference[:10]
+        plan.append({"chapterIndex": index, **{field: str(item[field]).strip()[:300] for field in fields}})
+    plan.sort(key=lambda item: int(item["chapterIndex"]))
+    return plan if [item["chapterIndex"] for item in plan] == list(range(1, 11)) else []
 
 
 def _candidate_source_overlap(idea: dict[str, Any], source_path: Path) -> str:
@@ -571,7 +594,6 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
             "chapterTitle": str(item.get("chapterTitle") or chapter["title"]).strip(),
             "evidence": chapter["evidence"],
             "status": "AI 已分析",
-            "structureTag": str(item.get("structureTag") or "").strip(),
             **{field: str(item[field]).strip()[:600] for field in fields},
         })
     mother_cards: list[dict[str, Any]] = []
@@ -594,12 +616,7 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
         })
     raw_style = payload.get("styleProfile") if isinstance(payload.get("styleProfile"), dict) else {}
     style_fields = ("narrativePerspective", "sentenceRhythm", "languageTexture", "dialogueStrategy", "hookTechnique", "avoidReuse")
-    if (
-        len(study_cards) != len(chapter_by_index)
-        or any(card["structureTag"] not in STRUCTURE_TAGS for card in study_cards)
-        or len(mother_cards) < 3
-        or not all(str(raw_style.get(field) or "").strip() for field in style_fields)
-    ):
+    if len(study_cards) != len(chapter_by_index) or len(mother_cards) < 3 or not all(str(raw_style.get(field) or "").strip() for field in style_fields):
         return None
     style_profile = {field: str(raw_style[field]).strip()[:500] for field in style_fields}
     return {"studyCards": study_cards, "motherCards": mother_cards, "styleProfile": style_profile}

@@ -590,12 +590,18 @@ class StorydexContextAssemblerService:
             if not isinstance(item, dict):
                 continue
             index = int(item.get("chapterIndex") or 0)
-            function = str(item.get("structuralFunction") or "").strip()
-            if index > 0 and function:
-                rhythm_lines.append(f"Chapter {index}: {function[:400]}")
+            narrative_task = str(item.get("narrativeTask") or "").strip()
+            conflict_progress = str(item.get("conflictProgress") or "").strip()
+            information_progress = str(item.get("informationProgress") or "").strip()
+            end_question = str(item.get("endQuestion") or "").strip()
+            if index > 0 and all((narrative_task, conflict_progress, information_progress, end_question)):
+                rhythm_lines.append(
+                    f"Chapter {index}: task={narrative_task[:300]}; conflict={conflict_progress[:300]}; "
+                    f"information={information_progress[:300]}; end question={end_question[:300]}"
+                )
         if rhythm_lines:
             lines.extend([
-                "Ten-chapter structural rhythm: use these as pacing functions only; create fresh characters, conflicts, information, and hooks for this project.",
+                "Ten-chapter plan: this was generated solely from this project's selected original premise. Continue it with fresh project-specific material.",
                 *rhythm_lines,
             ])
         style_reference = payload.get("writingStyleReference") if isinstance(payload.get("writingStyleReference"), dict) else {}
