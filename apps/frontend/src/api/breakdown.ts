@@ -22,6 +22,7 @@ export interface BreakdownResult {
   selectedChapters: BreakdownChapter[];
   studyCards: StudyCard[];
   motherCards: MotherCard[];
+  styleProfile?: StyleProfile;
   warnings: string[];
   status: string;
   nextStages: string[];
@@ -51,6 +52,15 @@ export interface MotherCard {
   doNotReuse: string[];
 }
 
+export interface StyleProfile {
+  narrativePerspective: string;
+  sentenceRhythm: string;
+  languageTexture: string;
+  dialogueStrategy: string;
+  hookTechnique: string;
+  avoidReuse: string;
+}
+
 export interface NewBookIdea {
   id: string;
   title: string;
@@ -58,6 +68,12 @@ export interface NewBookIdea {
   genre: string;
   tone: string;
   targetAudience: string;
+  protagonist?: string;
+  coreRule?: string;
+  mainConflict?: string;
+  longTermEngine?: string;
+  tenChapterPromise?: string;
+  sourceMechanism?: string;
   storyEngine: string;
   openingPlan: string;
   derivedFrom: string[];

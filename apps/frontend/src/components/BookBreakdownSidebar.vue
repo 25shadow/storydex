@@ -57,6 +57,14 @@
             <p><b>章末钩子：</b>{{ card.endHook }}</p>
           </div>
         </button>
+        <section v-if="result.styleProfile" class="style-profile">
+          <div class="breakdown-section-title">写作风格研究</div>
+          <p><b>叙事视角：</b>{{ result.styleProfile.narrativePerspective }}</p>
+          <p><b>句式节奏：</b>{{ result.styleProfile.sentenceRhythm }}</p>
+          <p><b>语言质感：</b>{{ result.styleProfile.languageTexture }}</p>
+          <p><b>对白策略：</b>{{ result.styleProfile.dialogueStrategy }}</p>
+          <p><b>钩子技巧：</b>{{ result.styleProfile.hookTechnique }}</p>
+        </section>
         <div class="breakdown-next-title">选择脑洞母卡</div>
         <label class="mother-card" :class="{ active: activeMotherCardId === card.id }" v-for="card in result.motherCards" :key="card.id" @click="activeMotherCardId = card.id">
           <input v-model="selectedMotherCardIds" type="checkbox" :value="card.id" />
@@ -81,11 +89,15 @@
           <p class="breakdown-muted">{{ ideaResult.notice }}</p>
           <div v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card" :class="{ active: activeIdeaId === idea.id }" @click="toggleIdea(idea.id)">
             <strong>{{ idea.title }}</strong>
-            <p>{{ idea.logline }}</p>
-            <small>{{ idea.storyEngine }}</small>
-            <em>{{ idea.derivationMethods.join(" · ") }}</em>
+            <p><b>题材：</b>{{ idea.genre || "待补充" }}</p>
+            <p><b>主角：</b>{{ idea.protagonist || "待补充" }}</p>
+            <p><b>核心规则：</b>{{ idea.coreRule || idea.logline }}</p>
+            <p><b>主冲突：</b>{{ idea.mainConflict || idea.logline }}</p>
+            <p><b>长期发动机：</b>{{ idea.longTermEngine || idea.storyEngine }}</p>
+            <p><b>前十章承诺：</b>{{ idea.tenChapterPromise || idea.openingPlan }}</p>
+            <em>{{ idea.sourceMechanism || idea.derivationMethods.join(" · ") }}</em>
             <div v-if="activeIdeaId === idea.id" class="card-details">
-              <p><b>前十章启动：</b>{{ idea.openingPlan }}</p>
+              <p><b>立项提示：</b>以主脑洞为核心，按已关联的十章结构节奏规划原创章节。</p>
             </div>
             <button
               class="idea-confirm"
@@ -279,6 +291,9 @@ h2 { margin: 5px 0; font-size: 20px; }
 .idea-form { margin-top: 14px; }
 .idea-form > p { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .idea-form .breakdown-primary { margin-top: 8px; }
+.style-profile { margin: 18px 0; padding: 12px; background: var(--bg-main); border-left: 2px solid var(--accent); color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.style-profile .breakdown-section-title { margin-top: 0; color: var(--text-primary); }
+.style-profile p { margin: 7px 0; }
 .idea-confirm { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; font: inherit; font-size: 11px; }
 .idea-confirm:disabled { opacity: .65; cursor: default; }
 </style>

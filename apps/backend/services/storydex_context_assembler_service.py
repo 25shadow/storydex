@@ -596,6 +596,23 @@ class StorydexContextAssemblerService:
                 "Ten-chapter structural rhythm: use these as pacing functions only; create fresh characters, conflicts, information, and hooks for this project.",
                 *rhythm_lines,
             ])
+        style_reference = payload.get("writingStyleReference") if isinstance(payload.get("writingStyleReference"), dict) else {}
+        style_lines = [
+            f"{label}: {str(style_reference.get(key) or '').strip()[:400]}"
+            for key, label in (
+                ("narrativePerspective", "Narrative perspective"),
+                ("sentenceRhythm", "Sentence rhythm"),
+                ("languageTexture", "Language texture"),
+                ("dialogueStrategy", "Dialogue strategy"),
+                ("hookTechnique", "Hook technique"),
+            )
+            if str(style_reference.get(key) or "").strip()
+        ]
+        if style_lines:
+            lines.extend([
+                "Writing-style reference: learn the high-level technique only; use new wording and never imitate source phrasing.",
+                *style_lines,
+            ])
         return "\n".join(lines), [relative_path]
 
     @staticmethod

@@ -128,6 +128,7 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
     chapter_structure = _chapter_structure_reference(analysis.get("studyCards"))
+    style_profile = analysis.get("styleProfile") if isinstance(analysis.get("styleProfile"), dict) else {}
 
     project = get_project_service().current_project()
     project_root = Path(project["workspaceRoot"])
@@ -142,6 +143,7 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         "projectName": str(project.get("projectName") or project_root.name),
         "idea": idea,
         "chapterStructureReference": chapter_structure,
+        "writingStyleReference": style_profile,
     }
     active_path.write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
     return success_response(
@@ -180,6 +182,7 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
         )
     result["studyCards"] = enhanced["studyCards"]
     result["motherCards"] = enhanced["motherCards"]
+    result["styleProfile"] = enhanced["styleProfile"]
     result["analysisMode"] = "ai_reference_analysis"
     analysis_id = str(uuid4())
     result["analysisId"] = analysis_id
@@ -196,7 +199,7 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
 
 async def _analyze_reference_with_ai(
     *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]]
-) -> tuple[dict[str, list[dict[str, Any]]] | None, str]:
+) -> tuple[dict[str, Any] | None, str]:
     """Analyze complete first-ten chapters through chunk extraction then aggregation."""
     try:
         chunk_analyses = await _analyze_chunks_with_ai(chapter_chunks)
@@ -211,6 +214,7 @@ async def _analyze_reference_with_ai(
             "只分析结构机制，不复述原文，不输出原书的长段落。",
             "studyCards 必须与每章一一对应，字段：chapterIndex, chapterTitle, function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
             "motherCards 生成 3 至 6 张抽象创意母卡，字段：id, title, type, mechanism, useFor, doNotReuse。",
+            "styleProfile 输出写作风格研究，字段：narrativePerspective, sentenceRhythm, languageTexture, dialogueStrategy, hookTechnique, avoidReuse。只描述可迁移的写法，不引用原句或复用专有表达。",
             "doNotReuse 必须包含对人物、设定、事件链、表达的禁止复用约束。",
             "只输出 JSON 对象：{studyCards: [], motherCards: []}。",
         ],
@@ -356,9 +360,9 @@ async def _generate_ideas_with_ai(
         "targetAudience": target_audience,
         "motherCards": compact_cards,
         "requirements": [
-            "生成 3 条彼此差异明显、可直接立项的新书脑洞。",
+            "生成 2 条彼此差异明显、可直接立项的新书脑洞。",
             "只能使用母卡的抽象机制，不能复用参考书人物、设定、情节、谜底或表达。",
-            "每条包含 title（不超过 20 字）、logline（不超过 120 字）、storyEngine（不超过 160 字）、openingPlan（不超过 180 字）。",
+            "每条包含 title、genre、protagonist、coreRule、mainConflict、longTermEngine、tenChapterPromise。每个字段不超过 120 字。",
             "只输出 JSON 数组，不要 Markdown。",
         ],
     }
@@ -432,7 +436,7 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any]) -> dict[str, list[dict[str, Any]]] | None:
+def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
     raw_study = payload.get("studyCards") if isinstance(payload.get("studyCards"), list) else []
     raw_mother = payload.get("motherCards") if isinstance(payload.get("motherCards"), list) else []
     chapter_by_index = {
@@ -475,9 +479,12 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
             "useFor": [str(value)[:80] for value in use_for[:5]],
             "doNotReuse": [str(value)[:120] for value in do_not_reuse[:6]],
         })
-    if len(study_cards) != len(chapter_by_index) or len(mother_cards) < 3:
+    raw_style = payload.get("styleProfile") if isinstance(payload.get("styleProfile"), dict) else {}
+    style_fields = ("narrativePerspective", "sentenceRhythm", "languageTexture", "dialogueStrategy", "hookTechnique", "avoidReuse")
+    if len(study_cards) != len(chapter_by_index) or len(mother_cards) < 3 or not all(str(raw_style.get(field) or "").strip() for field in style_fields):
         return None
-    return {"studyCards": study_cards, "motherCards": mother_cards}
+    style_profile = {field: str(raw_style[field]).strip()[:500] for field in style_fields}
+    return {"studyCards": study_cards, "motherCards": mother_cards, "styleProfile": style_profile}
 
 
 def _string_list(value: Any) -> list[str]:
@@ -493,19 +500,29 @@ def _normalize_ai_ideas(
     normalized: list[dict[str, Any]] = []
     for index, item in enumerate(ideas[:6]):
         title = str(item.get("title") or "").strip()
-        logline = str(item.get("logline") or "").strip()
-        story_engine = str(item.get("storyEngine") or "").strip()
-        opening_plan = str(item.get("openingPlan") or "").strip()
-        if not all((title, logline, story_engine, opening_plan)):
+        genre = str(item.get("genre") or "").strip()
+        protagonist = str(item.get("protagonist") or "").strip()
+        core_rule = str(item.get("coreRule") or "").strip()
+        main_conflict = str(item.get("mainConflict") or "").strip()
+        long_term_engine = str(item.get("longTermEngine") or "").strip()
+        ten_chapter_promise = str(item.get("tenChapterPromise") or "").strip()
+        if not all((title, genre, protagonist, core_rule, main_conflict, long_term_engine, ten_chapter_promise)):
             continue
         normalized.append({
             "id": f"idea-{index + 1}",
             "title": title[:100],
-            "logline": logline[:500],
-            "storyEngine": story_engine[:500],
-            "openingPlan": opening_plan[:500],
+            "genre": genre[:120],
+            "protagonist": protagonist[:160],
+            "coreRule": core_rule[:240],
+            "mainConflict": main_conflict[:240],
+            "longTermEngine": long_term_engine[:240],
+            "tenChapterPromise": ten_chapter_promise[:240],
+            "logline": main_conflict[:500],
+            "storyEngine": long_term_engine[:500],
+            "openingPlan": ten_chapter_promise[:500],
             "derivedFrom": source_ids,
             "derivationMethods": ["AI 抽象发散"],
+            "sourceMechanism": "参考抽象母卡机制：" + "、".join(str(card.get("title") or "")[:60] for card in cards[:3]),
             "originalityConstraints": ["不得复用参考书人物、设定、事件链或表达", "仅使用抽象机制", "正文创作不注入参考原文"],
         })
     return normalized
