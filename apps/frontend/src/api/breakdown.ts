@@ -140,6 +140,11 @@ export async function retryBreakdownRhythm(analysisId: string): Promise<ApiResul
   return unwrapEnvelope(response.data, "继续节奏档案失败。");
 }
 
+export async function continueBreakdown(analysisId: string): Promise<ApiResult<{ jobId: string; status: string }>> {
+  const response = await apiClient.post<ApiEnvelope<{ jobId: string; status: string }>>(`/breakdown/${encodeURIComponent(analysisId)}/continue`, {}, { timeout: 30000 });
+  return unwrapEnvelope(response.data, "继续拆书失败。");
+}
+
 export async function generateNewBookIdeas(payload: {
   analysisId: string;
   motherCardIds: string[];

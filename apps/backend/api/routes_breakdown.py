@@ -245,6 +245,24 @@ async def retry_breakdown_rhythm(analysis_id: str, request: Request) -> dict[str
     return success_response(data={"jobId": job_id, "status": "running"}, trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4()))).model_dump(by_alias=True)
 
 
+@router.post("/breakdown/{analysis_id}/continue")
+async def continue_breakdown(analysis_id: str, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", analysis_id):
+        raise HTTPException(status_code=400, detail="拆书记录标识无效。")
+    analysis_path = get_settings().global_root / "breakdowns" / analysis_id / "analysis.json"
+    try:
+        analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=404, detail="未找到可继续的拆书记录。") from exc
+    if not isinstance(analysis.get("chunkAnalyses"), list):
+        raise HTTPException(status_code=409, detail="该旧记录没有保存分块恢复点，无法继续；请重新提交一次 TXT。")
+    job_id = str(uuid4())
+    BREAKDOWN_JOBS[job_id] = {"status": "running", "events": [], "result": None, "error": ""}
+    _report_breakdown_job(job_id, "已加载最近恢复点，继续拆书任务。")
+    asyncio.create_task(_run_continue_job(job_id, analysis_path, analysis))
+    return success_response(data={"jobId": job_id, "status": "running"}, trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4()))).model_dump(by_alias=True)
+
+
 def _report_breakdown_job(job_id: str, content: str) -> None:
     job = BREAKDOWN_JOBS.get(job_id)
     if job is None:
@@ -290,7 +308,7 @@ async def _run_breakdown_job(job_id: str, raw: bytes, file_name: str, chapter_pa
         _report_breakdown_job(job_id, "拆书研究完成，章节卡、节奏档案、母卡和风格研究已保存。")
     except Exception as exc:
         job["error"] = str(exc) or "AI 拆书分析失败，请重试。"
-        if result and any(str(card.get("status") or "") == "AI 已分析" for card in result.get("studyCards", []) if isinstance(card, dict)):
+        if result and isinstance(result.get("chunkAnalyses"), list):
             result["status"] = "partial"
             result.setdefault("warnings", []).append(f"已保留可继续的中间研究：{job['error']}")
             analysis_path = get_settings().global_root / "breakdowns" / str(result["analysisId"]) / "analysis.json"
@@ -330,6 +348,37 @@ async def _run_rhythm_retry_job(job_id: str, analysis_path: Path, analysis: dict
         _report_breakdown_job(job_id, job["error"])
 
 
+async def _run_continue_job(job_id: str, analysis_path: Path, analysis: dict[str, Any]) -> None:
+    job = BREAKDOWN_JOBS[job_id]
+    try:
+        report = lambda content: _report_breakdown_job(job_id, content)
+        study_cards = analysis.get("studyCards") if isinstance(analysis.get("studyCards"), list) and all(
+            str(item.get("status") or "") == "AI 已分析" for item in analysis["studyCards"] if isinstance(item, dict)
+        ) else None
+        if not study_cards:
+            report("正在从已保存的分块事实汇总十张章节研究卡。")
+            study_cards = await _build_study_cards_with_ai(analysis, analysis["chunkAnalyses"])
+            analysis["studyCards"] = study_cards
+            analysis_path.write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+        materials_ready = isinstance(analysis.get("styleProfile"), dict) and isinstance(analysis.get("motherCards"), list) and len(analysis["motherCards"]) >= 3
+        if not materials_ready:
+            report("正在从保存的章节研究卡提炼母卡与写作风格。")
+            materials = await _build_mother_cards_and_style_with_ai(study_cards)
+            if not materials:
+                raise RuntimeError("AI 返回的母卡与风格结构不完整。")
+            analysis.update(materials)
+            analysis_path.write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+        await _run_rhythm_retry_job(job_id, analysis_path, analysis)
+    except Exception as exc:
+        analysis["status"] = "partial"
+        analysis.setdefault("warnings", []).append(f"可继续的拆书阶段失败：{str(exc)}")
+        analysis_path.write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+        job["status"] = "partial"
+        job["result"] = analysis
+        job["error"] = str(exc) or "继续拆书失败。"
+        _report_breakdown_job(job_id, job["error"])
+
+
 async def _analyze_reference_with_ai(
     *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]], progress: ProgressReporter | None = None,
     checkpoint: Callable[[dict[str, Any]], None] | None = None,
@@ -344,6 +393,7 @@ async def _analyze_reference_with_ai(
         return None, "AI 拆书分析超时：参考书前十章较长，请稍后重试。"
     except Exception:
         return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
+    save({"chunkAnalyses": chunk_analyses})
     try:
         report("分块事实已完成，正在汇总十张章节研究卡。")
         study_cards = await _build_study_cards_with_ai(result, chunk_analyses)

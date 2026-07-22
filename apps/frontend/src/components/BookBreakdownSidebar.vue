@@ -38,7 +38,7 @@
           <div v-for="warning in result.warnings" :key="warning"><span class="material-symbols-rounded">info</span>{{ warning }}</div>
         </div>
         <button v-if="result.status === 'partial'" class="breakdown-primary" type="button" :disabled="loading" @click="resumeRhythm">
-          <span class="material-symbols-rounded">resume</span>继续生成逐章节奏档案
+          <span class="material-symbols-rounded">resume</span>继续拆书
         </button>
         <div class="breakdown-section-title">前 {{ result.referenceChapterLimit }} 章研究范围</div>
         <ol class="breakdown-chapters">
@@ -120,7 +120,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import axios from "axios";
-import { analyzeBreakdown, fetchBreakdown, fetchBreakdownJob, generateNewBookIdeas, retryBreakdownRhythm, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { analyzeBreakdown, continueBreakdown, fetchBreakdown, fetchBreakdownJob, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 
@@ -205,7 +205,7 @@ async function resumeRhythm(): Promise<void> {
   errorMessage.value = "";
   breakdownAgentStore.start("拆书规划 Agent", "已读取保存的章节研究，继续生成逐章节奏档案。");
   try {
-    const response = await retryBreakdownRhythm(result.value.analysisId);
+    const response = await continueBreakdown(result.value.analysisId);
     const analysis = await waitForBreakdownJob(response.data.jobId);
     result.value = analysis;
     if (analysis.status === "partial") breakdownAgentStore.fail("节奏档案暂未完成，可再次继续，不会重跑章节研究。");
