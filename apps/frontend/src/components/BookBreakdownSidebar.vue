@@ -125,7 +125,7 @@
               :disabled="ideaSelecting || selectedIdeaId === idea.id"
               @click.stop="selectIdea(idea.id)"
             >
-              {{ selectedIdeaId === idea.id ? "已设为主脑洞并带入十章结构" : ideaSelecting ? "正在确认..." : "设为本书主脑洞" }}
+              {{ selectedIdeaId === idea.id ? "已设为主脑洞并带入十章结构" : confirmingIdeaId === idea.id ? "正在确认..." : "设为本书主脑洞" }}
             </button>
           </div>
         </section>
@@ -157,6 +157,7 @@ const ideaLoading = ref(false);
 const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
 const ideaSelecting = ref(false);
+const confirmingIdeaId = ref("");
 const selectedIdeaId = ref("");
 const ideaRequirement = ref("");
 const ideaResultsRef = ref<HTMLElement | null>(null);
@@ -267,6 +268,7 @@ async function generateIdeas(): Promise<void> {
 async function selectIdea(ideaId: string): Promise<void> {
   if (!result.value || !ideaResult.value || ideaSelecting.value) return;
   ideaSelecting.value = true;
+  confirmingIdeaId.value = ideaId;
   ideaError.value = "";
   breakdownAgentStore.start("拆书规划 Agent", "已确认原创立项，正在按参考书的抽象逐章节奏生成本书前十章规划。");
   try {
@@ -284,6 +286,7 @@ async function selectIdea(ideaId: string): Promise<void> {
     breakdownAgentStore.fail(ideaError.value);
   } finally {
     ideaSelecting.value = false;
+    confirmingIdeaId.value = "";
   }
 }
 async function loadSavedBreakdown(analysisId: string): Promise<void> {
