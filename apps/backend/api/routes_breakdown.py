@@ -45,6 +45,7 @@ class IdeaGenerationRequest(BaseModel):
     genre: str = ""
     tone: str = ""
     target_audience: str = Field(default="", alias="targetAudience")
+    requirement: str = Field(default="", max_length=1000)
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -631,6 +632,7 @@ async def generate_breakdown_ideas(payload: IdeaGenerationRequest, request: Requ
         genre=payload.genre,
         tone=payload.tone,
         target_audience=payload.target_audience,
+        requirement=payload.requirement,
     )
     if not ideas:
         raise HTTPException(
@@ -665,6 +667,7 @@ async def _generate_ideas_with_ai(
     genre: str,
     tone: str,
     target_audience: str,
+    requirement: str,
 ) -> tuple[list[dict[str, Any]], str, str]:
     """Use the configured Coomi provider only; never synthesize fallback ideas."""
     compact_cards = [
@@ -683,9 +686,11 @@ async def _generate_ideas_with_ai(
         "genre": genre,
         "tone": tone,
         "targetAudience": target_audience,
+        "userRequirement": requirement[:1000],
         "motherCards": compact_cards,
         "requirements": [
             "生成 2 条彼此差异明显、可直接立项的新书脑洞。",
+            "如 userRequirement 非空，必须在不违背原创立项要求的前提下纳入该需求。",
             "只能使用母卡的抽象机制，不能复用参考书人物、设定、情节、谜底或表达。",
             "必须创建全新的题材设定、人物身份、能力规则与事件起点；不得沿用母卡中的专有名词或具体物件。",
             "每条包含 title、genre、protagonist、coreRule、mainConflict、longTermEngine、tenChapterPromise。每个字段不超过 120 字。",

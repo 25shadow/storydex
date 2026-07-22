@@ -98,6 +98,7 @@
         <section class="idea-form">
           <div class="breakdown-next-title">关联新书</div>
           <p>候选会自动关联到当前项目：{{ projectName }}</p>
+          <textarea v-model="ideaRequirement" rows="3" placeholder="补充新书要求，例如题材、主角偏好、核心卖点或避免项" />
           <button class="breakdown-primary" type="button" :disabled="!selectedMotherCardIds.length || ideaLoading" @click="generateIdeas">
             <span class="material-symbols-rounded">auto_awesome</span>{{ ideaLoading ? "正在生成..." : "生成新书脑洞" }}
           </button>
@@ -157,6 +158,7 @@ const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
 const ideaSelecting = ref(false);
 const selectedIdeaId = ref("");
+const ideaRequirement = ref("");
 const ideaResultsRef = ref<HTMLElement | null>(null);
 const workspaceStore = useWorkspaceStore();
 const breakdownAgentStore = useBreakdownAgentStore();
@@ -169,13 +171,14 @@ function choose(file: File | undefined): void {
   ideaResult.value = null;
   selectedIdeaId.value = "";
   selectedMotherCardIds.value = [];
+  ideaRequirement.value = "";
   activeStudyCardId.value = "";
   activeMotherCardId.value = "";
   selectedFile.value = file;
 }
 function handleFileChange(event: Event): void { choose((event.target as HTMLInputElement).files?.[0]); }
 function handleDrop(event: DragEvent): void { dragging.value = false; choose(event.dataTransfer?.files?.[0]); }
-function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedIdeaId.value = ""; selectedMotherCardIds.value = []; activeStudyCardId.value = ""; activeMotherCardId.value = ""; activeIdeaId.value = ""; if (fileInput.value) fileInput.value.value = ""; }
+function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedIdeaId.value = ""; selectedMotherCardIds.value = []; ideaRequirement.value = ""; activeStudyCardId.value = ""; activeMotherCardId.value = ""; activeIdeaId.value = ""; if (fileInput.value) fileInput.value.value = ""; }
 async function startAnalysis(): Promise<void> {
   if (!selectedFile.value) return;
   loading.value = true; errorMessage.value = "";
@@ -247,7 +250,8 @@ async function generateIdeas(): Promise<void> {
       projectName: projectName.value,
       genre: "",
       tone: "",
-      targetAudience: ""
+      targetAudience: "",
+      requirement: ideaRequirement.value.trim()
     });
     ideaResult.value = response.data;
     selectedIdeaId.value = "";
@@ -364,6 +368,7 @@ h2 { margin: 5px 0; font-size: 20px; }
 .idea-form { margin-top: 14px; }
 .idea-form > p { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .idea-form .breakdown-primary { margin-top: 8px; }
+.idea-form textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 8px; resize: vertical; border: 1px solid var(--border-strong); border-radius: 0; background: var(--bg-main); color: var(--text-primary); font: inherit; font-size: 12px; line-height: 1.5; }
 .style-profile { margin: 18px 0; padding: 12px; background: var(--bg-main); border-left: 2px solid var(--accent); color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .style-profile .breakdown-section-title { margin-top: 0; color: var(--text-primary); }
 .style-profile p { margin: 7px 0; }
