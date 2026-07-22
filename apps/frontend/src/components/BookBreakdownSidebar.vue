@@ -45,26 +45,31 @@
           </li>
         </ol>
         <div class="breakdown-section-title">章节研究卡</div>
-        <div class="study-card" v-for="card in result.studyCards" :key="card.id">
+        <button class="study-card" :class="{ active: activeStudyCardId === card.id }" v-for="card in result.studyCards" :key="card.id" type="button" @click="toggleStudyCard(card.id)">
           <strong>第 {{ card.chapterIndex }} 章 · {{ card.chapterTitle }}</strong>
           <p>{{ card.function }}</p>
-        </div>
+          <div v-if="activeStudyCardId === card.id" class="card-details">
+            <p><b>读者问题：</b>{{ card.readerQuestion }}</p>
+            <p><b>冲突：</b>{{ card.conflict }}</p>
+            <p><b>信息变化：</b>{{ card.informationShift }}</p>
+            <p><b>关系变化：</b>{{ card.relationshipShift }}</p>
+            <p><b>章末钩子：</b>{{ card.endHook }}</p>
+          </div>
+        </button>
         <div class="breakdown-next-title">选择脑洞母卡</div>
-        <label class="mother-card" v-for="card in result.motherCards" :key="card.id">
+        <label class="mother-card" :class="{ active: activeMotherCardId === card.id }" v-for="card in result.motherCards" :key="card.id" @click="activeMotherCardId = card.id">
           <input v-model="selectedMotherCardIds" type="checkbox" :value="card.id" />
           <span>
             <strong>{{ card.title }}</strong>
             <small>{{ card.mechanism }}</small>
             <em>可用于：{{ card.useFor.join("、") }}</em>
+            <span v-if="activeMotherCardId === card.id" class="card-details"><b>不可复用：</b>{{ card.doNotReuse.join("、") }}</span>
           </span>
         </label>
 
         <section class="idea-form">
           <div class="breakdown-next-title">关联新书</div>
-          <p>候选将链接到当前项目：{{ projectName }}</p>
-          <input v-model.trim="ideaGenre" placeholder="新书题材，例如都市悬疑" />
-          <input v-model.trim="ideaTone" placeholder="情绪基调，例如紧张治愈" />
-          <input v-model.trim="ideaAudience" placeholder="目标读者，例如女性向连载读者" />
+          <p>候选会自动关联到当前项目：{{ projectName }}</p>
           <button class="breakdown-primary" type="button" :disabled="!selectedMotherCardIds.length || ideaLoading" @click="generateIdeas">
             <span class="material-symbols-rounded">auto_awesome</span>{{ ideaLoading ? "正在生成..." : "生成新书脑洞" }}
           </button>
@@ -73,12 +78,16 @@
         <section v-if="ideaResult" class="idea-results">
           <div class="breakdown-next-title">原创脑洞候选</div>
           <p class="breakdown-muted">{{ ideaResult.notice }}</p>
-          <article v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card">
+          <button v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card" :class="{ active: activeIdeaId === idea.id }" type="button" @click="toggleIdea(idea.id)">
             <strong>{{ idea.title }}</strong>
             <p>{{ idea.logline }}</p>
             <small>{{ idea.storyEngine }}</small>
             <em>{{ idea.derivationMethods.join(" · ") }}</em>
-          </article>
+            <div v-if="activeIdeaId === idea.id" class="card-details">
+              <p><b>前十章启动：</b>{{ idea.openingPlan }}</p>
+              <p><b>原创限制：</b>{{ idea.originalityConstraints.join("；") }}</p>
+            </div>
+          </button>
         </section>
       </section>
     </section>
@@ -98,9 +107,9 @@ const dragging = ref(false);
 const errorMessage = ref("");
 const result = ref<BreakdownResult | null>(null);
 const selectedMotherCardIds = ref<string[]>([]);
-const ideaGenre = ref("");
-const ideaTone = ref("");
-const ideaAudience = ref("");
+const activeStudyCardId = ref("");
+const activeMotherCardId = ref("");
+const activeIdeaId = ref("");
 const ideaLoading = ref(false);
 const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
@@ -113,11 +122,13 @@ function choose(file: File | undefined): void {
   result.value = null;
   ideaResult.value = null;
   selectedMotherCardIds.value = [];
+  activeStudyCardId.value = "";
+  activeMotherCardId.value = "";
   selectedFile.value = file;
 }
 function handleFileChange(event: Event): void { choose((event.target as HTMLInputElement).files?.[0]); }
 function handleDrop(event: DragEvent): void { dragging.value = false; choose(event.dataTransfer?.files?.[0]); }
-function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedMotherCardIds.value = []; if (fileInput.value) fileInput.value.value = ""; }
+function clearFile(): void { selectedFile.value = null; result.value = null; ideaResult.value = null; selectedMotherCardIds.value = []; activeStudyCardId.value = ""; activeMotherCardId.value = ""; activeIdeaId.value = ""; if (fileInput.value) fileInput.value.value = ""; }
 async function startAnalysis(): Promise<void> {
   if (!selectedFile.value) return;
   loading.value = true; errorMessage.value = "";
@@ -140,9 +151,9 @@ async function generateIdeas(): Promise<void> {
       analysisId: result.value.analysisId,
       motherCardIds: selectedMotherCardIds.value,
       projectName: projectName.value,
-      genre: ideaGenre.value,
-      tone: ideaTone.value,
-      targetAudience: ideaAudience.value
+      genre: "",
+      tone: "",
+      targetAudience: ""
     });
     ideaResult.value = response.data;
   } catch (error) {
@@ -152,6 +163,8 @@ async function generateIdeas(): Promise<void> {
   }
   finally { ideaLoading.value = false; }
 }
+function toggleStudyCard(id: string): void { activeStudyCardId.value = activeStudyCardId.value === id ? "" : id; }
+function toggleIdea(id: string): void { activeIdeaId.value = activeIdeaId.value === id ? "" : id; }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 </script>
 
@@ -190,7 +203,8 @@ h2 { margin: 5px 0; font-size: 20px; }
 .chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .breakdown-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .breakdown-tags span { padding: 4px 7px; background: var(--accent-soft); color: var(--accent); font-size: 10px; }
-.study-card, .idea-card { padding: 9px 0; border-bottom: 1px solid var(--border-subtle); font-size: 11px; line-height: 1.5; }
+.study-card, .idea-card { display: block; box-sizing: border-box; width: 100%; padding: 9px 0; border: 0; border-bottom: 1px solid var(--border-subtle); background: transparent; color: var(--text-primary); font: inherit; font-size: 11px; line-height: 1.5; text-align: left; cursor: pointer; }
+.study-card:hover, .study-card.active, .idea-card:hover, .idea-card.active, .mother-card.active { background: var(--accent-soft); }
 .study-card strong, .idea-card strong { font-size: 12px; }
 .study-card p, .idea-card p { margin: 4px 0; color: var(--text-muted); }
 .mother-card { display: flex; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border-subtle); cursor: pointer; font-size: 12px; }
@@ -198,8 +212,9 @@ h2 { margin: 5px 0; font-size: 20px; }
 .mother-card strong, .mother-card small, .mother-card em, .idea-card small, .idea-card em { display: block; }
 .mother-card small, .idea-card small { margin-top: 3px; color: var(--text-muted); line-height: 1.45; }
 .mother-card em, .idea-card em { margin-top: 5px; color: var(--accent); font-size: 10px; font-style: normal; }
+.card-details { display: block; margin-top: 7px; padding: 8px; background: var(--bg-main); color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.card-details p { margin: 4px 0; }
 .idea-form { margin-top: 14px; }
 .idea-form > p { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
-.idea-form input { box-sizing: border-box; width: 100%; margin: 4px 0; padding: 8px; border: 1px solid var(--border-strong); background: var(--bg-main); color: var(--text-primary); font: inherit; font-size: 12px; }
 .idea-form .breakdown-primary { margin-top: 8px; }
 </style>

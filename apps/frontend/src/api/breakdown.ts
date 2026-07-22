@@ -34,6 +34,11 @@ export interface StudyCard {
   function: string;
   evidence: Record<string, number>;
   status: string;
+  readerQuestion?: string;
+  conflict?: string;
+  informationShift?: string;
+  relationshipShift?: string;
+  endHook?: string;
 }
 
 export interface MotherCard {

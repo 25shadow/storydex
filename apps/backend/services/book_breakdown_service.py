@@ -113,6 +113,32 @@ def analyze_novel(raw: bytes, file_name: str, chapter_pattern: str = "auto") -> 
     }
 
 
+def reference_chapter_texts(raw: bytes, analysis: dict[str, Any], max_chars_per_chapter: int = 8000) -> list[dict[str, Any]]:
+    """Return only the first-ten chapter text needed for AI structural analysis."""
+    decoded = decode_novel(raw)
+    lines = decoded.text.splitlines()
+    passages: list[dict[str, Any]] = []
+    for chapter in analysis.get("selectedChapters", []):
+        if not isinstance(chapter, dict):
+            continue
+        start_line = chapter.get("startLine")
+        end_line = chapter.get("endLine")
+        if isinstance(start_line, int) and isinstance(end_line, int):
+            body = "\n".join(lines[start_line - 1:end_line]).strip()
+        else:
+            evidence = chapter.get("evidence") if isinstance(chapter.get("evidence"), dict) else {}
+            start = int(evidence.get("charStart") or 0)
+            end = int(evidence.get("charEnd") or start + max_chars_per_chapter)
+            body = decoded.text[start:end]
+        passages.append({
+            "chapterIndex": chapter.get("index"),
+            "chapterTitle": chapter.get("title"),
+            "text": body[:max_chars_per_chapter],
+            "truncated": len(body) > max_chars_per_chapter,
+        })
+    return passages
+
+
 def _build_study_cards(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     functions = (
         "开篇承诺：建立主角处境、异常或读者问题。",
