@@ -20,6 +20,9 @@
             <time>{{ formatTime(item.updatedAt) }}</time>
           </div>
         </button>
+        <button class="history-delete" type="button" title="删除拆书记录" @click="deleteItem(item)">
+          <span class="material-symbols-rounded">delete</span>
+        </button>
       </li>
     </ol>
     <section class="history-note">
@@ -31,7 +34,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { fetchBreakdownHistory, type BreakdownHistoryItem } from "@/api/breakdown";
+import { deleteBreakdown, fetchBreakdownHistory, type BreakdownHistoryItem } from "@/api/breakdown";
 
 const props = defineProps<{ activeAnalysisId?: string }>();
 const emit = defineEmits<{ (event: "load-breakdown", analysisId: string): void }>();
@@ -57,6 +60,18 @@ function loadBreakdown(analysisId: string): void {
   emit("load-breakdown", analysisId);
 }
 
+async function deleteItem(item: BreakdownHistoryItem): Promise<void> {
+  if (!window.confirm(`删除拆书记录“${item.fileName}”？此操作会删除分析结果和脑洞候选。`)) return;
+  errorMessage.value = "";
+  try {
+    await deleteBreakdown(item.analysisId);
+    items.value = items.value.filter((entry) => entry.analysisId !== item.analysisId);
+    if (props.activeAnalysisId === item.analysisId) emit("load-breakdown", "");
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除拆书记录失败。";
+  }
+}
+
 function formatTime(value: number): string {
   return value ? new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 }
@@ -73,9 +88,12 @@ button { border: 0; background: transparent; color: var(--text-muted); cursor: p
 .history-state { padding: 20px 18px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
 .history-state.is-error { color: var(--danger); }
 .history-list { margin: 0; padding: 0; overflow: auto; list-style: none; }
-.history-list li { border-bottom: 1px solid var(--border-subtle); }
-.history-list li > button { display: grid; grid-template-columns: 22px 1fr; width: 100%; gap: 8px; padding: 13px 16px; color: inherit; text-align: left; }
-.history-list li > button:hover, .history-list li > button.active { background: var(--accent-soft); }
+.history-list li { display: flex; align-items: stretch; border-bottom: 1px solid var(--border-subtle); }
+.history-list li > button:first-child { display: grid; grid-template-columns: 22px 1fr; flex: 1; min-width: 0; gap: 8px; padding: 13px 8px 13px 16px; color: inherit; text-align: left; }
+.history-list li > button:first-child:hover, .history-list li > button:first-child.active { background: var(--accent-soft); }
+.history-delete { width: 34px; color: var(--text-muted); opacity: 0; }
+.history-list li:hover .history-delete { opacity: 1; }
+.history-delete:hover { color: var(--danger); background: var(--accent-soft); }
 .history-list .material-symbols-rounded { color: var(--accent); font-size: 18px; }
 .history-list strong, .history-list small, .history-list time { display: block; }
 .history-list strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

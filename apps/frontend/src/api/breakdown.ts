@@ -177,6 +177,11 @@ export async function fetchBreakdown(analysisId: string): Promise<ApiResult<Brea
   return unwrapEnvelope(response.data, "拆书记录加载失败。");
 }
 
+export async function deleteBreakdown(analysisId: string): Promise<ApiResult<{ analysisId: string; deleted: boolean }>> {
+  const response = await apiClient.delete<ApiEnvelope<{ analysisId: string; deleted: boolean }>>(`/breakdown/${encodeURIComponent(analysisId)}`);
+  return unwrapEnvelope(response.data, "删除拆书记录失败。");
+}
+
 export async function selectNewBookIdea(payload: {
   analysisId: string;
   ideaRunId: string;

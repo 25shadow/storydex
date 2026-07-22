@@ -5,6 +5,7 @@ import binascii
 import asyncio
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -108,6 +109,41 @@ def breakdown_detail(analysis_id: str, request: Request) -> dict[str, Any]:
         data=result,
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
         audit=[{"action": "read_breakdown", "analysisId": analysis_id}],
+    ).model_dump(by_alias=True)
+
+
+@router.delete("/breakdown/{analysis_id}")
+def delete_breakdown(analysis_id: str, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", analysis_id):
+        raise HTTPException(status_code=400, detail="拆书记录标识无效。")
+    root = get_settings().global_root / "breakdowns" / analysis_id
+    if not (root / "analysis.json").exists():
+        raise HTTPException(status_code=404, detail="未找到这条拆书记录。")
+    project = get_project_service().current_project()
+    project_root = Path(project["workspaceRoot"])
+    active_path = project_root / ".storydex" / "references" / "brainstorm" / "active.json"
+    try:
+        active = json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        active = {}
+    if str(active.get("analysisId") or "") == analysis_id:
+        active_path.unlink(missing_ok=True)
+    link_root = active_path.parent
+    if link_root.is_dir():
+        for link_path in link_root.glob("*.json"):
+            if link_path.name == "active.json":
+                continue
+            try:
+                link = json.loads(link_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if str(link.get("analysisId") or "") == analysis_id:
+                link_path.unlink(missing_ok=True)
+    shutil.rmtree(root)
+    return success_response(
+        data={"analysisId": analysis_id, "deleted": True},
+        trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
+        audit=[{"action": "delete_breakdown", "analysisId": analysis_id}],
     ).model_dump(by_alias=True)
 
 
