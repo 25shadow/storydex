@@ -59,8 +59,8 @@ def test_reference_chunks_keep_all_text_from_a_long_chapter():
     analysis = analyze_novel(text.encode(), "long.txt")
     chunks = reference_chapter_chunks(text.encode(), analysis)
 
-    assert len(chunks) == 4
-    assert [item["chapterIndex"] for item in chunks] == [1, 1, 1, 2]
+    assert len(chunks) == 5
+    assert [item["chapterIndex"] for item in chunks] == [1, 1, 1, 1, 2]
     assert sum(len(item["text"]) for item in chunks) >= 13100
 
 

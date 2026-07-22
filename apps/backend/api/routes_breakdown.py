@@ -345,9 +345,10 @@ async def _build_mother_cards_and_style_with_ai(study_cards: list[dict[str, Any]
 
 
 async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    semaphore = asyncio.Semaphore(3)
+    # Smaller inputs and restrained concurrency keep slow model providers from queueing out.
+    semaphore = asyncio.Semaphore(2)
 
-    async def analyze_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    async def analyze_once(chunk: dict[str, Any]) -> dict[str, Any]:
         prompt = {
             "task": "提炼小说章节分块的结构事实，供后续章节汇总使用。",
             "chapterIndex": chunk["chapterIndex"],
@@ -365,7 +366,7 @@ async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str
                 system="你是小说结构分析师。只提炼当前分块的结构事实，不做改写。",
                 prompt=prompt,
                 purpose="breakdown_chunk_analysis",
-                timeout=75,
+                timeout=100,
             )
         parsed = _extract_json_object(str(getattr(response, "content", "") or ""))
         fields = ("summary", "conflict", "informationShift", "relationshipShift", "suspense")
@@ -380,7 +381,36 @@ async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str
             **{field: str(parsed[field]).strip()[:500] for field in fields if field != "summary"},
         }
 
-    return await asyncio.gather(*(analyze_chunk(chunk) for chunk in chunks))
+    async def analyze_chunk(chunk: dict[str, Any]) -> list[dict[str, Any]]:
+        try:
+            return [await analyze_once(chunk)]
+        except asyncio.TimeoutError:
+            children = _split_timed_out_chunk(chunk)
+            if not children:
+                raise
+            # Do not discard a whole ten-chapter study because one slow request timed out.
+            results = await asyncio.gather(*(analyze_chunk(child) for child in children))
+            return [item for group in results for item in group]
+
+    groups = await asyncio.gather(*(analyze_chunk(chunk) for chunk in chunks))
+    return [item for group in groups for item in group]
+
+
+def _split_timed_out_chunk(chunk: dict[str, Any]) -> list[dict[str, Any]]:
+    """Retry a slow model request with two smaller paragraph-aware inputs."""
+    text = str(chunk.get("text") or "").strip()
+    if len(text) <= 900:
+        return []
+    midpoint = len(text) // 2
+    boundary = text.rfind("\n", max(0, midpoint - 500), min(len(text), midpoint + 500))
+    if boundary <= 0:
+        boundary = midpoint
+    parts = [text[:boundary].strip(), text[boundary:].strip()]
+    return [
+        {**chunk, "chunkIndex": f"{chunk.get('chunkIndex')}.{index}", "text": part}
+        for index, part in enumerate(parts, start=1)
+        if part
+    ]
 
 
 @router.post("/breakdown/ideas/generate")

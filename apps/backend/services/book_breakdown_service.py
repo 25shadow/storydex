@@ -113,7 +113,7 @@ def analyze_novel(raw: bytes, file_name: str, chapter_pattern: str = "auto") -> 
     }
 
 
-def reference_chapter_chunks(raw: bytes, analysis: dict[str, Any], max_chars_per_chunk: int = 6000) -> list[dict[str, Any]]:
+def reference_chapter_chunks(raw: bytes, analysis: dict[str, Any], max_chars_per_chunk: int = 3500) -> list[dict[str, Any]]:
     """Split the complete first-ten chapters at paragraph boundaries for map-reduce analysis."""
     decoded = decode_novel(raw)
     lines = decoded.text.splitlines()
@@ -128,7 +128,7 @@ def reference_chapter_chunks(raw: bytes, analysis: dict[str, Any], max_chars_per
         else:
             evidence = chapter.get("evidence") if isinstance(chapter.get("evidence"), dict) else {}
             start = int(evidence.get("charStart") or 0)
-            end = int(evidence.get("charEnd") or start + max_chars_per_chapter)
+            end = int(evidence.get("charEnd") or start + max_chars_per_chunk)
             body = decoded.text[start:end]
         paragraphs = [item.strip() for item in body.split("\n") if item.strip()]
         current: list[str] = []
