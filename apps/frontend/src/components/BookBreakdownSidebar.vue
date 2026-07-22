@@ -4,7 +4,7 @@
       <div>
         <div class="breakdown-kicker">TEXT WORKSPACE</div>
         <h2>拆书</h2>
-        <p>仅研究热榜书前 10 章，生成原创新书脑洞。</p>
+        <p>交由拆书规划 Agent 研究热榜书前 10 章，生成原创新书脑洞。</p>
       </div>
       <span class="material-symbols-rounded breakdown-header-icon">menu_book</span>
     </header>
@@ -23,7 +23,7 @@
       </div>
 
       <button class="breakdown-primary" type="button" :disabled="!selectedFile || loading" @click="startAnalysis">
-        <span class="material-symbols-rounded">play_arrow</span>{{ loading ? "正在建立章节骨架..." : "开始拆书" }}
+        <span class="material-symbols-rounded">smart_toy</span>{{ loading ? "拆书规划 Agent 正在研究前十章..." : "交给拆书规划 Agent" }}
       </button>
       <p v-if="loading && !selectedFile" class="breakdown-muted">正在加载拆书记录...</p>
       <p v-if="errorMessage" class="breakdown-error">{{ errorMessage }}</p>
