@@ -12,7 +12,7 @@
     <div v-else-if="items.length === 0" class="history-state">完成一次 AI 拆书后，记录会显示在这里。</div>
     <ol v-else class="history-list">
       <li v-for="item in items" :key="item.analysisId">
-        <button type="button" :class="{ active: uiStore.breakdownLoadId === item.analysisId }" @click="loadBreakdown(item.analysisId)">
+        <button type="button" :class="{ active: props.activeAnalysisId === item.analysisId }" @click="loadBreakdown(item.analysisId)">
           <span class="material-symbols-rounded">auto_stories</span>
           <div>
             <strong>{{ item.fileName }}</strong>
@@ -32,12 +32,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { fetchBreakdownHistory, type BreakdownHistoryItem } from "@/api/breakdown";
-import { useUiStore } from "@/stores/ui";
+
+const props = defineProps<{ activeAnalysisId?: string }>();
+const emit = defineEmits<{ (event: "load-breakdown", analysisId: string): void }>();
 
 const items = ref<BreakdownHistoryItem[]>([]);
 const loading = ref(false);
 const errorMessage = ref("");
-const uiStore = useUiStore();
 
 async function loadHistory(): Promise<void> {
   loading.value = true;
@@ -53,7 +54,7 @@ async function loadHistory(): Promise<void> {
 }
 
 function loadBreakdown(analysisId: string): void {
-  uiStore.requestBreakdownLoad(analysisId);
+  emit("load-breakdown", analysisId);
 }
 
 function formatTime(value: number): string {

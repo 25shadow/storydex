@@ -7,7 +7,12 @@
 
       <template v-if="showStorydexSidebar">
         <div class="storydex-sidebar-shell">
-          <component :is="sidebarComponent" />
+          <BreakdownHistoryPanel
+            v-if="showBreakdownWorkspace"
+            :active-analysis-id="selectedBreakdownId"
+            @load-breakdown="selectBreakdown"
+          />
+          <component v-else :is="sidebarComponent" />
         </div>
         <div
           class="workspace-splitter"
@@ -16,7 +21,7 @@
         ></div>
       </template>
 
-      <BookBreakdownSidebar v-if="showBreakdownWorkspace" class="breakdown-workspace" :analysis-id="uiStore.breakdownLoadId" />
+      <BookBreakdownSidebar v-if="showBreakdownWorkspace" class="breakdown-workspace" :analysis-id="selectedBreakdownId" />
       <EditorPane v-else-if="!relationshipGraphMode" />
       <div v-else-if="workspaceStore.launchScreenVisible" class="storydex-relationship-empty">
         先打开一个 Storydex 项目，再查看知识图谱和WIKI。
@@ -68,6 +73,7 @@ const workspaceStore = useWorkspaceStore();
 const { applyTheme, applyTypography } = useTheme();
 
 const workspaceRef = ref<HTMLElement | null>(null);
+const selectedBreakdownId = ref("");
 
 const ACTIVITY_BAR_WIDTH = 48;
 const SPLITTER_WIDTH = 8;
@@ -91,11 +97,12 @@ const sidebarComponent = computed(() => {
   if (uiStore.activeActivity === "prompts") {
     return PromptRepositorySidebar;
   }
-  if (uiStore.activeActivity === "breakdown") {
-    return BreakdownHistoryPanel;
-  }
   return ExplorerSidebar;
 });
+
+function selectBreakdown(analysisId: string): void {
+  selectedBreakdownId.value = String(analysisId || "").trim();
+}
 
 const workspaceStyle = computed(() => {
   const sidebarWidth = workspaceStore.launchScreenVisible ? Math.min(uiStore.sidebarWidth, 320) : uiStore.sidebarWidth;
