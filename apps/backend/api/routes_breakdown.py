@@ -327,11 +327,9 @@ async def _run_rhythm_retry_job(job_id: str, analysis_path: Path, analysis: dict
         report = lambda content: _report_breakdown_job(job_id, content)
         report("拆书规划 Agent 正在根据已保存的十张章节研究卡生成节奏档案。")
         rhythm = await get_breakdown_planning_agent().build_reference_rhythm(analysis["studyCards"])
-        overlap = _reference_content_overlap(rhythm, source_text)
-        if overlap:
-            report("节奏档案命中参考书短语，正在进行安全改写。")
-            rhythm = await get_breakdown_planning_agent().sanitize_reference_rhythm(rhythm, [overlap])
-            _redact_reference_content(rhythm, source_text)
+        redaction_count = _redact_reference_content(rhythm, source_text)
+        if redaction_count:
+            report(f"节奏档案发现 {redaction_count} 处参考书短语，已完成安全脱敏。")
         if not rhythm or _reference_content_overlap(rhythm, source_text):
             raise RuntimeError("AI 节奏档案无法完成安全脱敏。")
         analysis["referenceRhythm"] = rhythm
@@ -422,22 +420,11 @@ async def _analyze_reference_with_ai(
     if not reference_rhythm:
         return None, "AI 返回的逐章节奏档案不完整，请重试。"
     source_text = "".join(str(chunk.get("text") or "") for chunk in chapter_chunks if isinstance(chunk, dict))
-    overlap = _reference_content_overlap(reference_rhythm, source_text)
-    if overlap:
-        try:
-            report("节奏档案命中参考书短语，正在进行安全改写，不重复前面的章节研究。")
-            reference_rhythm = await get_breakdown_planning_agent().sanitize_reference_rhythm(reference_rhythm, [overlap])
-        except asyncio.TimeoutError:
-            return None, "AI 节奏档案安全改写超时；章节研究已完成，但本次无法生成安全节奏档案。"
-        except Exception:
-            return None, "AI 节奏档案安全改写失败；章节研究已完成，但本次无法生成安全节奏档案。"
-        if not reference_rhythm:
-            return None, "AI 节奏档案安全改写未返回完整结果。"
-        redaction_count = _redact_reference_content(reference_rhythm, source_text)
-        if redaction_count:
-            report(f"安全改写后仍发现 {redaction_count} 处参考书短语，已自动脱敏并保留逐章节奏关系。")
-        if _reference_content_overlap(reference_rhythm, source_text):
-            return None, "AI 节奏档案无法完成安全脱敏。"
+    redaction_count = _redact_reference_content(reference_rhythm, source_text)
+    if redaction_count:
+        report(f"节奏档案发现 {redaction_count} 处参考书短语，已完成安全脱敏并保留逐章节奏关系。")
+    if _reference_content_overlap(reference_rhythm, source_text):
+        return None, "AI 节奏档案无法完成安全脱敏。"
     report("逐章节奏档案已通过安全检查。")
     return {"studyCards": study_cards, "referenceRhythm": reference_rhythm, **materials}, ""
 

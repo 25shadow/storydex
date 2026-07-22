@@ -22,21 +22,37 @@ class BreakdownPlanningAgent:
             for card in study_cards
             if isinstance(card, dict)
         ]
-        payload = await self._ask(
-            system="你是拆书规划 Agent。你的职责是保留章节节奏关系，同时彻底去除参考书的具体内容。",
-            purpose="breakdown_reference_rhythm",
-            prompt={
-                "task": "将十章研究卡转换为逐章结构节奏档案。",
-                "studyCards": cards,
-                "requirements": [
-                    "输出 chapters 数组，必须恰好十项；每项包含 chapterIndex、narrativeMotion、tensionTransition、informationRelease、readerContract、hookShape。",
-                    "逐章保留原有节奏的先后关系与升级方式，不得使用固定章节标签或统一模板。",
-                    "只能描述叙事动作和读者体验；不得包含人物、地名、组织、物件、能力、设定、事件、谜底或原句。",
-                    "每个字段不超过 90 字；只输出 JSON 对象：{chapters: []}。",
-                ],
-            },
-        )
-        return _normalize_plan(payload, fields=_RHYTHM_FIELDS)
+        prompt = {
+            "task": "将十章研究卡转换为逐章结构节奏档案。",
+            "studyCards": cards,
+            "requirements": [
+                "输出 chapters 数组，章节数必须与输入一致；每项包含 chapterIndex、narrativeMotion、tensionTransition、informationRelease、readerContract、hookShape。",
+                "逐章保留原有节奏的先后关系与升级方式，不得使用固定章节标签或统一模板。",
+                "只能描述叙事动作和读者体验；不得包含人物、地名、组织、物件、能力、设定、事件、谜底或原句。",
+                "每个字段不超过 90 字；只输出 JSON 对象：{chapters: []}。",
+            ],
+        }
+        try:
+            payload = await self._ask(
+                system="你是拆书规划 Agent。你的职责是保留章节节奏关系，同时彻底去除参考书的具体内容。",
+                purpose="breakdown_reference_rhythm",
+                prompt=prompt,
+            )
+            rhythm = _normalize_plan(payload, fields=_RHYTHM_FIELDS, expected_indexes=list(range(1, 11)))
+        except Exception:
+            rhythm = []
+        if rhythm:
+            return rhythm
+        # Slow providers handle two bounded five-chapter planning turns more reliably.
+        batches = []
+        for batch in (cards[:5], cards[5:]):
+            batch_payload = await self._ask(
+                system="你是拆书规划 Agent。你的职责是保留章节节奏关系，同时彻底去除参考书的具体内容。",
+                purpose="breakdown_reference_rhythm_batch",
+                prompt={**prompt, "studyCards": batch},
+            )
+            batches.extend(_normalize_plan(batch_payload, fields=_RHYTHM_FIELDS, expected_indexes=[int(item["chapterIndex"]) for item in batch]))
+        return _normalize_plan({"chapters": batches}, fields=_RHYTHM_FIELDS, expected_indexes=list(range(1, 11)))
 
     async def build_new_book_plan(self, idea: dict[str, Any], reference_rhythm: list[dict[str, Any]]) -> list[dict[str, Any]]:
         premise = {
@@ -101,7 +117,7 @@ def get_breakdown_planning_agent() -> BreakdownPlanningAgent:
     return BreakdownPlanningAgent()
 
 
-def _normalize_plan(payload: dict[str, Any], *, fields: tuple[str, ...]) -> list[dict[str, Any]]:
+def _normalize_plan(payload: dict[str, Any], *, fields: tuple[str, ...], expected_indexes: list[int] | None = None) -> list[dict[str, Any]]:
     raw_chapters = payload.get("chapters") if isinstance(payload.get("chapters"), list) else []
     plan: list[dict[str, Any]] = []
     for item in raw_chapters:
@@ -112,7 +128,8 @@ def _normalize_plan(payload: dict[str, Any], *, fields: tuple[str, ...]) -> list
             continue
         plan.append({"chapterIndex": index, **{field: str(item[field]).strip()[:300] for field in fields}})
     plan.sort(key=lambda item: int(item["chapterIndex"]))
-    return plan if [item["chapterIndex"] for item in plan] == list(range(1, 11)) else []
+    expected = expected_indexes or list(range(1, 11))
+    return plan if [item["chapterIndex"] for item in plan] == expected else []
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
