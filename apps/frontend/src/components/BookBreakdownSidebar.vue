@@ -213,6 +213,7 @@ async function loadSavedBreakdown(analysisId: string): Promise<void> {
   try {
     const response = await fetchBreakdown(analysisId);
     result.value = response.data;
+    ideaResult.value = response.data.latestIdeaRun ?? null;
     selectedFile.value = null;
     selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);
   } catch (error) {

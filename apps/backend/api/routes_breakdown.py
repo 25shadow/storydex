@@ -90,6 +90,16 @@ def breakdown_detail(analysis_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="拆书记录无法读取。") from exc
     if not isinstance(result, dict):
         raise HTTPException(status_code=500, detail="拆书记录格式无效。")
+    idea_runs_root = analysis_path.parent / "idea-runs"
+    if idea_runs_root.is_dir():
+        for run_path in sorted(idea_runs_root.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            try:
+                latest_run = json.loads(run_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(latest_run, dict) and isinstance(latest_run.get("ideas"), list):
+                result["latestIdeaRun"] = latest_run
+                break
     return success_response(
         data=result,
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),

@@ -25,6 +25,7 @@ export interface BreakdownResult {
   warnings: string[];
   status: string;
   nextStages: string[];
+  latestIdeaRun?: IdeaGenerationResult;
 }
 
 export interface StudyCard {
