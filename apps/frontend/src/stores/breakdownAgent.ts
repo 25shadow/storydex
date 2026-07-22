@@ -15,6 +15,7 @@ export interface BreakdownAgentTask {
   startedAt: number;
   updatedAt: number;
   events: BreakdownAgentEvent[];
+  analysisId?: string;
 }
 
 export const useBreakdownAgentStore = defineStore("breakdownAgent", {
@@ -24,7 +25,7 @@ export const useBreakdownAgentStore = defineStore("breakdownAgent", {
     isRunning: (state): boolean => state.task?.status === "running"
   },
   actions: {
-    start(title: string, firstEvent: string): void {
+    start(title: string, firstEvent: string, analysisId = ""): void {
       const now = Date.now();
       this.task = {
         id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -32,7 +33,8 @@ export const useBreakdownAgentStore = defineStore("breakdownAgent", {
         status: "running",
         startedAt: now,
         updatedAt: now,
-        events: [{ id: `${now}-0`, content: firstEvent, timestamp: now }]
+        events: [{ id: `${now}-0`, content: firstEvent, timestamp: now }],
+        analysisId: analysisId || undefined
       };
     },
     report(content: string): void {
@@ -54,6 +56,9 @@ export const useBreakdownAgentStore = defineStore("breakdownAgent", {
     },
     clear(): void {
       this.task = null;
+    },
+    setAnalysisId(analysisId: string): void {
+      if (this.task) this.task.analysisId = String(analysisId || "").trim() || undefined;
     }
   }
 });

@@ -629,10 +629,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import MarkdownIt from "markdown-it";
 import AgentExecutionFloatBar from "@/components/AgentExecutionFloatBar.vue";
 import CoomiConfigPanel from "@/components/CoomiConfigPanel.vue";
+import { continueBreakdown, fetchBreakdownJob } from "@/api/breakdown";
 import { useAgentStore } from "@/stores/agent";
 import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 import { useGitStore } from "@/stores/git";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { useUiStore } from "@/stores/ui";
 import {
   findMarkdownLinkAnchor,
   isExternalMarkdownHref,
@@ -678,6 +680,7 @@ const agentStore = useAgentStore();
 const breakdownAgentStore = useBreakdownAgentStore();
 const gitStore = useGitStore();
 const workspaceStore = useWorkspaceStore();
+const uiStore = useUiStore();
 const configPanelOpen = ref(false);
 const sessionMenuOpen = ref(false);
 const dockRef = ref<HTMLElement | null>(null);
@@ -1135,9 +1138,42 @@ async function handleSubmitOrStop(): Promise<void> {
   if (agentStore.pendingCommitPrompt) {
     return;
   }
+  if (await handleBreakdownCommand()) {
+    return;
+  }
   await agentStore.runPrompt();
   await nextTick();
   resizeComposer();
+}
+
+async function handleBreakdownCommand(): Promise<boolean> {
+  const input = agentStore.promptInput.trim();
+  const analysisId = breakdownAgentStore.task?.analysisId || "";
+  if (!analysisId || !/^(继续拆书|继续分析|恢复拆书)$/.test(input)) return false;
+  agentStore.promptInput = "";
+  breakdownAgentStore.start("拆书规划 Agent", "Coomi 已接收继续拆书指令，正在加载最近恢复点。", analysisId);
+  try {
+    const started = await continueBreakdown(analysisId);
+    let seen = 0;
+    while (true) {
+      const job = await fetchBreakdownJob(started.data.jobId);
+      for (const event of job.data.events.slice(seen)) breakdownAgentStore.report(event.content);
+      seen = job.data.events.length;
+      if ((job.data.status === "completed" || job.data.status === "partial") && job.data.result) {
+        breakdownAgentStore.setAnalysisId(job.data.result.analysisId);
+        if (job.data.status === "completed") breakdownAgentStore.finish("Coomi 已完成拆书恢复，正在刷新拆书记录。");
+        else breakdownAgentStore.fail("拆书恢复已保存到最近阶段，可再次继续。");
+        uiStore.setActivity("breakdown");
+        uiStore.requestBreakdownLoad(job.data.result.analysisId);
+        return true;
+      }
+      if (job.data.status === "failed") throw new Error(job.data.error || "继续拆书失败。");
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+    }
+  } catch (error) {
+    breakdownAgentStore.fail(error instanceof Error ? error.message : "继续拆书失败。");
+    return true;
+  }
 }
 
 async function handleNoSnapshotConfirm(): Promise<void> {

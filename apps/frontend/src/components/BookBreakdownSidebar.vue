@@ -172,6 +172,7 @@ async function startAnalysis(): Promise<void> {
     const response = await analyzeBreakdown(selectedFile.value.name, btoa(binary));
     const analysis = await waitForBreakdownJob(response.data.jobId);
     result.value = analysis;
+    breakdownAgentStore.setAnalysisId(analysis.analysisId);
     selectedMotherCardIds.value = analysis.motherCards.map((card) => card.id);
     if (analysis.status === "partial") {
       breakdownAgentStore.fail("章节研究已保存，逐章节奏档案可继续生成。");
@@ -208,6 +209,7 @@ async function resumeRhythm(): Promise<void> {
     const response = await continueBreakdown(result.value.analysisId);
     const analysis = await waitForBreakdownJob(response.data.jobId);
     result.value = analysis;
+    breakdownAgentStore.setAnalysisId(analysis.analysisId);
     if (analysis.status === "partial") breakdownAgentStore.fail("节奏档案暂未完成，可再次继续，不会重跑章节研究。");
     else breakdownAgentStore.finish("逐章节奏档案已完成，拆书记录已更新。");
   } catch (error) {
@@ -276,6 +278,7 @@ async function loadSavedBreakdown(analysisId: string): Promise<void> {
   try {
     const response = await fetchBreakdown(analysisId);
     result.value = response.data;
+    breakdownAgentStore.setAnalysisId(response.data.analysisId);
     ideaResult.value = response.data.latestIdeaRun ?? null;
     selectedFile.value = null;
     selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);

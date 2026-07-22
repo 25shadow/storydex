@@ -131,6 +131,13 @@ watch(
 );
 
 watch(
+  () => uiStore.breakdownLoadId,
+  (analysisId) => {
+    if (analysisId) selectedBreakdownId.value = analysisId;
+  }
+);
+
+watch(
   () => [uiStore.fileFontSize, uiStore.playerFontSize] as const,
   ([fileFontSize, playerFontSize]) => applyTypography({ fileFontSize, playerFontSize }),
   { immediate: true }
