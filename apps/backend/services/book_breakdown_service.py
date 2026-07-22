@@ -113,30 +113,49 @@ def analyze_novel(raw: bytes, file_name: str, chapter_pattern: str = "auto") -> 
     }
 
 
-def reference_chapter_texts(raw: bytes, analysis: dict[str, Any], max_chars_per_chapter: int = 3500) -> list[dict[str, Any]]:
-    """Return only the first-ten chapter text needed for AI structural analysis."""
+def reference_chapter_chunks(raw: bytes, analysis: dict[str, Any], max_chars_per_chunk: int = 6000) -> list[dict[str, Any]]:
+    """Split the complete first-ten chapters at paragraph boundaries for map-reduce analysis."""
     decoded = decode_novel(raw)
     lines = decoded.text.splitlines()
-    passages: list[dict[str, Any]] = []
+    chunks: list[dict[str, Any]] = []
     for chapter in analysis.get("selectedChapters", []):
         if not isinstance(chapter, dict):
             continue
         start_line = chapter.get("startLine")
         end_line = chapter.get("endLine")
         if isinstance(start_line, int) and isinstance(end_line, int):
-            body = "\n".join(lines[start_line - 1:end_line]).strip()
+            body = "\n".join(lines[start_line:end_line]).strip()
         else:
             evidence = chapter.get("evidence") if isinstance(chapter.get("evidence"), dict) else {}
             start = int(evidence.get("charStart") or 0)
             end = int(evidence.get("charEnd") or start + max_chars_per_chapter)
             body = decoded.text[start:end]
-        passages.append({
-            "chapterIndex": chapter.get("index"),
-            "chapterTitle": chapter.get("title"),
-            "text": body[:max_chars_per_chapter],
-            "truncated": len(body) > max_chars_per_chapter,
-        })
-    return passages
+        paragraphs = [item.strip() for item in body.split("\n") if item.strip()]
+        current: list[str] = []
+        current_size = 0
+        chunk_index = 1
+        for paragraph in paragraphs or [body]:
+            parts = [paragraph[offset:offset + max_chars_per_chunk] for offset in range(0, len(paragraph), max_chars_per_chunk)] or [""]
+            for part in parts:
+                if current and current_size + len(part) + 1 > max_chars_per_chunk:
+                    chunks.append(_chapter_chunk(chapter, chunk_index, "\n".join(current)))
+                    chunk_index += 1
+                    current = []
+                    current_size = 0
+                current.append(part)
+                current_size += len(part) + 1
+        if current:
+            chunks.append(_chapter_chunk(chapter, chunk_index, "\n".join(current)))
+    return chunks
+
+
+def _chapter_chunk(chapter: dict[str, Any], chunk_index: int, text: str) -> dict[str, Any]:
+    return {
+        "chapterIndex": chapter.get("index"),
+        "chapterTitle": chapter.get("title"),
+        "chunkIndex": chunk_index,
+        "text": text,
+    }
 
 
 def _build_study_cards(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:

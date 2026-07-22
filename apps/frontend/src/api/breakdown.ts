@@ -88,7 +88,7 @@ export async function analyzeBreakdown(fileName: string, contentBase64: string):
     fileName,
     contentBase64,
     options: { chapterPattern: "auto" }
-  });
+  }, { timeout: 600000 });
   return unwrapEnvelope(response.data, "拆书分析失败。");
 }
 

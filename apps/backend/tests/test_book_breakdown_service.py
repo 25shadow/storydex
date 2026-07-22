@@ -1,6 +1,6 @@
 import pytest
 
-from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel
+from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, reference_chapter_chunks
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -50,3 +50,13 @@ def test_reference_analysis_keeps_only_first_ten_chapters_and_builds_cards():
     assert len(result["motherCards"]) == 3
     assert "第10章" in result["selectedChapters"][-1]["title"]
     assert any("前 10 章" in warning for warning in result["warnings"])
+
+
+def test_reference_chunks_keep_all_text_from_a_long_chapter():
+    text = "第一章 长章\n" + "甲" * 13000 + "\n第二章 短章\n" + "乙" * 100
+    analysis = analyze_novel(text.encode(), "long.txt")
+    chunks = reference_chapter_chunks(text.encode(), analysis)
+
+    assert len(chunks) == 4
+    assert [item["chapterIndex"] for item in chunks] == [1, 1, 1, 2]
+    assert sum(len(item["text"]) for item in chunks) >= 13100

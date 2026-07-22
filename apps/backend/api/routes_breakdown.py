@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.response import ApiTrace, success_response
 from core.config import get_settings
-from services.book_breakdown_service import analyze_novel, reference_chapter_texts
+from services.book_breakdown_service import analyze_novel, reference_chapter_chunks
 from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
@@ -84,7 +84,7 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
 
     enhanced, analysis_error = await _analyze_reference_with_ai(
         result=result,
-        chapter_texts=reference_chapter_texts(raw, result),
+        chapter_chunks=reference_chapter_chunks(raw, result),
     )
     if not enhanced:
         raise HTTPException(
@@ -108,12 +108,18 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
 
 
 async def _analyze_reference_with_ai(
-    *, result: dict[str, Any], chapter_texts: list[dict[str, Any]]
+    *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]]
 ) -> tuple[dict[str, list[dict[str, Any]]] | None, str]:
-    """Analyze only first-ten reference chapters; no static-card fallback."""
+    """Analyze complete first-ten chapters through chunk extraction then aggregation."""
+    try:
+        chunk_analyses = await _analyze_chunks_with_ai(chapter_chunks)
+    except asyncio.TimeoutError:
+        return None, "AI 拆书分析超时：参考书前十章较长，请稍后重试。"
+    except Exception:
+        return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
     prompt = {
         "task": "对热榜书前十章做结构研究，为原创新书提供抽象参考。",
-        "chapters": chapter_texts,
+        "chunkAnalyses": chunk_analyses,
         "requirements": [
             "只分析结构机制，不复述原文，不输出原书的长段落。",
             "studyCards 必须与每章一一对应，字段：chapterIndex, chapterTitle, function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
@@ -138,6 +144,45 @@ async def _analyze_reference_with_ai(
         return None, "AI 拆书分析超时：前十章结构较长，请稍后重试。"
     except Exception:
         return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
+
+
+async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    semaphore = asyncio.Semaphore(3)
+
+    async def analyze_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+        prompt = {
+            "task": "提炼小说章节分块的结构事实，供后续章节汇总使用。",
+            "chapterIndex": chunk["chapterIndex"],
+            "chapterTitle": chunk["chapterTitle"],
+            "chunkIndex": chunk["chunkIndex"],
+            "text": chunk["text"],
+            "requirements": [
+                "不复述原文，不引用长段落。",
+                "输出 JSON 对象：summary, events, conflict, informationShift, relationshipShift, suspense。",
+                "events 为不超过 5 条的简短事实数组，其余字段为简短字符串。",
+            ],
+        }
+        async with semaphore:
+            response = await _call_creative_provider(
+                system="你是小说结构分析师。只提炼当前分块的结构事实，不做改写。",
+                prompt=prompt,
+                purpose="breakdown_chunk_analysis",
+                timeout=75,
+            )
+        parsed = _extract_json_object(str(getattr(response, "content", "") or ""))
+        fields = ("summary", "conflict", "informationShift", "relationshipShift", "suspense")
+        if not all(str(parsed.get(field) or "").strip() for field in fields):
+            raise ValueError("AI 分块分析结构不完整")
+        return {
+            "chapterIndex": chunk["chapterIndex"],
+            "chapterTitle": chunk["chapterTitle"],
+            "chunkIndex": chunk["chunkIndex"],
+            "summary": str(parsed["summary"]).strip()[:700],
+            "events": _string_list(parsed.get("events"))[:5],
+            **{field: str(parsed[field]).strip()[:500] for field in fields if field != "summary"},
+        }
+
+    return await asyncio.gather(*(analyze_chunk(chunk) for chunk in chunks))
 
 
 @router.post("/breakdown/ideas/generate")
