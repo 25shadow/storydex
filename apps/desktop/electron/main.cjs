@@ -41,6 +41,8 @@ let pendingOpenTarget = null;
 let nextOpenTargetId = 0;
 let previewWindow = null;
 const backendProcessLogs = new WeakMap();
+let devRendererWatcher = null;
+let devRendererReloadTimer = null;
 
 const PYTHON_PREFLIGHT_CODE = [
   "import sys",
@@ -174,6 +176,46 @@ function focusWindow(windowRef) {
 
 function focusMainWindow() {
   focusWindow(mainWindow);
+}
+
+function startDevRendererHotReload() {
+  if (app.isPackaged || devRendererWatcher) {
+    return;
+  }
+  const sourceRoot = path.resolve(__dirname, "..", "..", "frontend", "src");
+  if (!fs.existsSync(sourceRoot)) {
+    return;
+  }
+  try {
+    devRendererWatcher = fs.watch(sourceRoot, { recursive: true }, (_eventType, fileName) => {
+      const extension = path.extname(String(fileName || "")).toLowerCase();
+      if (!['.vue', '.ts', '.tsx', '.js', '.css', '.json'].includes(extension)) {
+        return;
+      }
+      if (devRendererReloadTimer) {
+        clearTimeout(devRendererReloadTimer);
+      }
+      devRendererReloadTimer = setTimeout(() => {
+        devRendererReloadTimer = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.reloadIgnoringCache();
+        }
+      }, 350);
+    });
+  } catch (error) {
+    console.warn("[Storydex Desktop] Development hot reload watcher unavailable:", error.message || String(error));
+  }
+}
+
+function stopDevRendererHotReload() {
+  if (devRendererReloadTimer) {
+    clearTimeout(devRendererReloadTimer);
+    devRendererReloadTimer = null;
+  }
+  if (devRendererWatcher) {
+    devRendererWatcher.close();
+    devRendererWatcher = null;
+  }
 }
 
 function queueOpenTarget(target) {
@@ -1432,6 +1474,7 @@ async function createMainWindow() {
 
 app.on("before-quit", () => {
   quitting = true;
+  stopDevRendererHotReload();
   stopBackendKernel();
 });
 
@@ -1455,6 +1498,7 @@ app.whenReady().then(async () => {
     return;
   }
   await createMainWindow();
+  startDevRendererHotReload();
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
