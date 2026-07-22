@@ -140,7 +140,11 @@ async function startAnalysis(): Promise<void> {
     const response = await analyzeBreakdown(selectedFile.value.name, btoa(binary));
     result.value = response.data;
     selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);
-  } catch (error) { errorMessage.value = error instanceof Error ? error.message : "拆书分析失败，请重试。"; }
+  } catch (error) {
+    errorMessage.value = axios.isAxiosError(error)
+      ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 拆书分析失败，请重试。")
+      : error instanceof Error ? error.message : "拆书分析失败，请重试。";
+  }
   finally { loading.value = false; }
 }
 async function generateIdeas(): Promise<void> {

@@ -42,6 +42,33 @@ class IdeaGenerationRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+@router.get("/breakdown/history")
+def breakdown_history(request: Request) -> dict[str, Any]:
+    root = get_settings().global_root / "breakdowns"
+    items: list[dict[str, Any]] = []
+    if root.exists():
+        for directory in sorted(root.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
+            analysis_path = directory / "analysis.json"
+            if not directory.is_dir() or not analysis_path.exists():
+                continue
+            try:
+                analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            items.append({
+                "analysisId": str(analysis.get("analysisId") or directory.name),
+                "fileName": str(analysis.get("fileName") or "未命名参考书"),
+                "chapterCount": int(analysis.get("chapterCount") or 0),
+                "selectedChapterCount": len(analysis.get("selectedChapters") or []),
+                "status": str(analysis.get("status") or "unknown"),
+                "updatedAt": int(directory.stat().st_mtime * 1000),
+            })
+    return success_response(
+        data={"items": items[:30]},
+        trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
+    ).model_dump(by_alias=True)
+
+
 @router.post("/breakdown/analyze")
 async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict[str, Any]:
     try:
@@ -55,14 +82,14 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    enhanced = await _analyze_reference_with_ai(
+    enhanced, analysis_error = await _analyze_reference_with_ai(
         result=result,
         chapter_texts=reference_chapter_texts(raw, result),
     )
     if not enhanced:
         raise HTTPException(
             status_code=503,
-            detail="AI 拆书分析不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
+            detail=analysis_error or "AI 拆书分析不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。",
         )
     result["studyCards"] = enhanced["studyCards"]
     result["motherCards"] = enhanced["motherCards"]
@@ -82,7 +109,7 @@ async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict
 
 async def _analyze_reference_with_ai(
     *, result: dict[str, Any], chapter_texts: list[dict[str, Any]]
-) -> dict[str, list[dict[str, Any]]] | None:
+) -> tuple[dict[str, list[dict[str, Any]]] | None, str]:
     """Analyze only first-ten reference chapters; no static-card fallback."""
     prompt = {
         "task": "对热榜书前十章做结构研究，为原创新书提供抽象参考。",
@@ -103,9 +130,14 @@ async def _analyze_reference_with_ai(
             timeout=90,
         )
         payload = _extract_json_object(str(getattr(response, "content", "") or ""))
-        return _normalize_reference_analysis(payload, result)
+        normalized = _normalize_reference_analysis(payload, result)
+        if normalized:
+            return normalized, ""
+        return None, "AI 返回的拆书结构不完整，请重试。"
+    except asyncio.TimeoutError:
+        return None, "AI 拆书分析超时：前十章结构较长，请稍后重试。"
     except Exception:
-        return None
+        return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
 
 
 @router.post("/breakdown/ideas/generate")

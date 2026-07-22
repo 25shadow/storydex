@@ -74,6 +74,15 @@ export interface IdeaGenerationResult {
   ideas: NewBookIdea[];
 }
 
+export interface BreakdownHistoryItem {
+  analysisId: string;
+  fileName: string;
+  chapterCount: number;
+  selectedChapterCount: number;
+  status: string;
+  updatedAt: number;
+}
+
 export async function analyzeBreakdown(fileName: string, contentBase64: string): Promise<ApiResult<BreakdownResult>> {
   const response = await apiClient.post<ApiEnvelope<BreakdownResult>>("/breakdown/analyze", {
     fileName,
@@ -93,4 +102,9 @@ export async function generateNewBookIdeas(payload: {
 }): Promise<ApiResult<IdeaGenerationResult>> {
   const response = await apiClient.post<ApiEnvelope<IdeaGenerationResult>>("/breakdown/ideas/generate", payload);
   return unwrapEnvelope(response.data, "新书脑洞生成失败。");
+}
+
+export async function fetchBreakdownHistory(): Promise<ApiResult<{ items: BreakdownHistoryItem[] }>> {
+  const response = await apiClient.get<ApiEnvelope<{ items: BreakdownHistoryItem[] }>>("/breakdown/history");
+  return unwrapEnvelope(response.data, "拆书历史加载失败。");
 }

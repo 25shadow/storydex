@@ -113,7 +113,7 @@ def analyze_novel(raw: bytes, file_name: str, chapter_pattern: str = "auto") -> 
     }
 
 
-def reference_chapter_texts(raw: bytes, analysis: dict[str, Any], max_chars_per_chapter: int = 8000) -> list[dict[str, Any]]:
+def reference_chapter_texts(raw: bytes, analysis: dict[str, Any], max_chars_per_chapter: int = 3500) -> list[dict[str, Any]]:
     """Return only the first-ten chapter text needed for AI structural analysis."""
     decoded = decode_novel(raw)
     lines = decoded.text.splitlines()

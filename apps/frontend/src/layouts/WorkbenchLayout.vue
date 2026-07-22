@@ -29,12 +29,13 @@
       />
 
       <div
-        v-if="showAgentPanel"
+        v-if="showAuxPanel"
         class="workspace-splitter workspace-splitter-agent"
         title="拖动调整 Agent 栏宽度"
         @pointerdown="startResize('agent', $event)"
       ></div>
-      <AgentPanel v-if="showAgentPanel" />
+      <BreakdownHistoryPanel v-if="showBreakdownHistory" />
+      <AgentPanel v-else-if="showAgentPanel" />
     </div>
 
     <StatusBar />
@@ -52,6 +53,7 @@ import ExplorerSidebar from "@/components/ExplorerSidebar.vue";
 import PresetManagementSidebar from "@/components/PresetManagementSidebar.vue";
 import PromptRepositorySidebar from "@/components/PromptRepositorySidebar.vue";
 import BookBreakdownSidebar from "@/components/BookBreakdownSidebar.vue";
+import BreakdownHistoryPanel from "@/components/BreakdownHistoryPanel.vue";
 import SourceControlSidebar from "@/components/SourceControlSidebar.vue";
 import StatusBar from "@/components/StatusBar.vue";
 import StoryStatePanel from "@/components/StoryStatePanel.vue";
@@ -76,7 +78,9 @@ const MIN_AGENT_WIDTH = 320;
 
 const relationshipGraphMode = computed(() => uiStore.activeActivity === "relationships");
 const showStorydexSidebar = computed(() => !uiStore.sidebarCollapsed && !relationshipGraphMode.value);
-const showAgentPanel = computed(() => !uiStore.agentCollapsed && !workspaceStore.launchScreenVisible);
+const showBreakdownHistory = computed(() => uiStore.activeActivity === "breakdown");
+const showAgentPanel = computed(() => !showBreakdownHistory.value && !uiStore.agentCollapsed && !workspaceStore.launchScreenVisible);
+const showAuxPanel = computed(() => showBreakdownHistory.value || showAgentPanel.value);
 const sidebarComponent = computed(() => {
   if (uiStore.activeActivity === "source-control") {
     return SourceControlSidebar;
@@ -102,7 +106,7 @@ const workspaceStyle = computed(() => {
   const editorMinWidth = relationshipGraphMode.value ? 0 : MIN_EDITOR_WIDTH;
   const editorColumn = `minmax(${editorMinWidth}px, 1fr)`;
 
-  if (!showAgentPanel.value) {
+  if (!showAuxPanel.value) {
     return {
       gridTemplateColumns: [...leadColumns, editorColumn].join(" ")
     };
@@ -147,9 +151,9 @@ function startResize(target: "sidebar" | "agent", event: PointerEvent): void {
     const minSidebarWidth = MIN_SIDEBAR_WIDTH;
     const minAgentWidth = MIN_AGENT_WIDTH;
     const sidebarTrackWidth = showStorydexSidebar.value ? uiStore.sidebarWidth : 0;
-    const agentTrackWidth = showAgentPanel.value ? startAgent : 0;
+    const agentTrackWidth = showAuxPanel.value ? startAgent : 0;
     const splitterWidthTotal = (showStorydexSidebar.value ? SPLITTER_WIDTH : 0)
-      + (showAgentPanel.value ? AGENT_SPLITTER_WIDTH : 0);
+      + (showAuxPanel.value ? AGENT_SPLITTER_WIDTH : 0);
 
     if (target === "sidebar") {
       const maxSidebar = Math.max(
