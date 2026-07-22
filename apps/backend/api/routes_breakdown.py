@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.response import ApiTrace, success_response
 from core.config import get_settings
-from services.book_breakdown_service import analyze_novel, reference_chapter_chunks
+from services.book_breakdown_service import analyze_novel, decode_novel, reference_chapter_chunks
 from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
@@ -122,6 +122,12 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
     idea = next((item for item in ideas if isinstance(item, dict) and str(item.get("id") or "") == payload.idea_id), None)
     if idea is None:
         raise HTTPException(status_code=404, detail="未找到所选的新书脑洞。")
+    required_idea_fields = ("genre", "protagonist", "coreRule", "mainConflict", "longTermEngine", "tenChapterPromise")
+    if not all(str(idea.get(field) or "").strip() for field in required_idea_fields):
+        raise HTTPException(
+            status_code=409,
+            detail="这是一张旧版候选，缺少原创立项字段，不能设为主脑洞。请重新生成新版脑洞候选。",
+        )
     analysis_path = get_settings().global_root / "breakdowns" / payload.analysis_id / "analysis.json"
     try:
         analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
@@ -129,6 +135,13 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
     chapter_structure = _chapter_structure_reference(analysis.get("studyCards"))
     style_profile = analysis.get("styleProfile") if isinstance(analysis.get("styleProfile"), dict) else {}
+    source_path = analysis_path.parent / "source.txt"
+    reused_phrase = _candidate_source_overlap(idea, source_path)
+    if reused_phrase:
+        raise HTTPException(
+            status_code=422,
+            detail="候选与参考书存在直接文本重合，不能设为主脑洞。请重新生成原创候选。",
+        )
 
     project = get_project_service().current_project()
     project_root = Path(project["workspaceRoot"])
@@ -144,6 +157,7 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         "idea": idea,
         "chapterStructureReference": chapter_structure,
         "writingStyleReference": style_profile,
+        "originalityVerified": True,
     }
     active_path.write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
     return success_response(
@@ -426,6 +440,7 @@ async def _generate_ideas_with_ai(
         "requirements": [
             "生成 2 条彼此差异明显、可直接立项的新书脑洞。",
             "只能使用母卡的抽象机制，不能复用参考书人物、设定、情节、谜底或表达。",
+            "必须创建全新的题材设定、人物身份、能力规则与事件起点；不得沿用母卡中的专有名词或具体物件。",
             "每条包含 title、genre、protagonist、coreRule、mainConflict、longTermEngine、tenChapterPromise。每个字段不超过 120 字。",
             "只输出 JSON 数组，不要 Markdown。",
         ],
@@ -463,6 +478,24 @@ def _chapter_structure_reference(value: Any) -> list[dict[str, Any]]:
             continue
         reference.append({"chapterIndex": index, "structuralFunction": function[:400]})
     return reference[:10]
+
+
+def _candidate_source_overlap(idea: dict[str, Any], source_path: Path) -> str:
+    """Reject candidate text that copies an eight-character source-book phrase."""
+    try:
+        source = re.sub(r"\s+", "", decode_novel(source_path.read_bytes()).text)
+    except (OSError, ValueError):
+        return ""
+    candidate = re.sub(
+        r"\s+",
+        "",
+        " ".join(str(idea.get(field) or "") for field in ("title", "genre", "protagonist", "coreRule", "mainConflict", "longTermEngine", "tenChapterPromise")),
+    )
+    for offset in range(max(0, len(candidate) - 7)):
+        phrase = candidate[offset : offset + 8]
+        if len(phrase) == 8 and phrase in source:
+            return phrase
+    return ""
 
 
 async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:
@@ -616,7 +649,7 @@ def _normalize_ai_ideas(
             "openingPlan": ten_chapter_promise[:500],
             "derivedFrom": source_ids,
             "derivationMethods": ["AI 抽象发散"],
-            "sourceMechanism": "参考抽象母卡机制：" + "、".join(str(card.get("title") or "")[:60] for card in cards[:3]),
+            "sourceMechanism": "来源：已参考抽象机制，具体设定、人物和事件均为新生成",
             "originalityConstraints": ["不得复用参考书人物、设定、事件链或表达", "仅使用抽象机制", "正文创作不注入参考原文"],
         })
     return normalized

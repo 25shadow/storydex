@@ -563,6 +563,8 @@ class StorydexContextAssemblerService:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return "", []
+        if payload.get("originalityVerified") is not True:
+            return "", []
         idea = payload.get("idea") if isinstance(payload.get("idea"), dict) else {}
         title = str(idea.get("title") or "").strip()
         logline = str(idea.get("logline") or "").strip()
