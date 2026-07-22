@@ -314,8 +314,13 @@ async def _analyze_reference_with_ai(
             return None, "AI 节奏档案安全改写超时；章节研究已完成，但本次无法生成安全节奏档案。"
         except Exception:
             return None, "AI 节奏档案安全改写失败；章节研究已完成，但本次无法生成安全节奏档案。"
-        if not reference_rhythm or _reference_content_overlap(reference_rhythm, source_text):
-            return None, "AI 节奏档案仍含参考书内容，已保留安全边界并拒绝写入。"
+        if not reference_rhythm:
+            return None, "AI 节奏档案安全改写未返回完整结果。"
+        redaction_count = _redact_reference_content(reference_rhythm, source_text)
+        if redaction_count:
+            report(f"安全改写后仍发现 {redaction_count} 处参考书短语，已自动脱敏并保留逐章节奏关系。")
+        if _reference_content_overlap(reference_rhythm, source_text):
+            return None, "AI 节奏档案无法完成安全脱敏。"
     report("逐章节奏档案已通过安全检查。")
     return {"studyCards": study_cards, "referenceRhythm": reference_rhythm, **materials}, ""
 
@@ -622,6 +627,29 @@ def _reference_content_overlap(reference_rhythm: list[dict[str, Any]], source_te
         if len(phrase) == 4 and phrase in source:
             return phrase
     return ""
+
+
+def _redact_reference_content(reference_rhythm: list[dict[str, Any]], source_text: str) -> int:
+    """Dynamically remove only source phrases while retaining the generated rhythm axes."""
+    fields = ("narrativeMotion", "tensionTransition", "informationRelease", "readerContract", "hookShape")
+    count = 0
+    for _ in range(40):
+        phrase = _reference_content_overlap(reference_rhythm, source_text)
+        if not phrase:
+            return count
+        changed = False
+        for item in reference_rhythm:
+            if not isinstance(item, dict):
+                continue
+            for field in fields:
+                value = str(item.get(field) or "")
+                if phrase in value:
+                    item[field] = value.replace(phrase, "关键要素")
+                    changed = True
+        if not changed:
+            break
+        count += 1
+    return count
 
 
 async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:

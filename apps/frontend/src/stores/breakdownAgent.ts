@@ -37,6 +37,7 @@ export const useBreakdownAgentStore = defineStore("breakdownAgent", {
     },
     report(content: string): void {
       if (!this.task) return;
+      if (this.task.events[this.task.events.length - 1]?.content === content) return;
       const now = Date.now();
       this.task.events.push({ id: `${now}-${this.task.events.length}`, content, timestamp: now });
       this.task.updatedAt = now;
