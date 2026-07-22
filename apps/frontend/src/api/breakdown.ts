@@ -100,7 +100,7 @@ export async function generateNewBookIdeas(payload: {
   tone: string;
   targetAudience: string;
 }): Promise<ApiResult<IdeaGenerationResult>> {
-  const response = await apiClient.post<ApiEnvelope<IdeaGenerationResult>>("/breakdown/ideas/generate", payload);
+  const response = await apiClient.post<ApiEnvelope<IdeaGenerationResult>>("/breakdown/ideas/generate", payload, { timeout: 150000 });
   return unwrapEnvelope(response.data, "新书脑洞生成失败。");
 }
 

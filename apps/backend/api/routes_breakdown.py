@@ -269,7 +269,7 @@ async def _generate_ideas_with_ai(
             system="你是小说创意总监。你只处理抽象创作机制，严格避免对参考书的改写或近似复述。",
             prompt=prompt,
             purpose="breakdown_idea_generation",
-            timeout=45,
+            timeout=120,
         )
         parsed = _extract_idea_array(str(getattr(response, "content", "") or ""))
         ideas = _normalize_ai_ideas(parsed, cards)
@@ -277,7 +277,7 @@ async def _generate_ideas_with_ai(
             return ideas, "ai_originality_guard", ""
         return [], "ai_unavailable", "AI 返回内容不符合脑洞卡格式，请重试。"
     except asyncio.TimeoutError:
-        return [], "ai_unavailable", "AI 脑洞生成超时：模型响应超过 45 秒，请稍后重试。"
+        return [], "ai_unavailable", "AI 脑洞生成超时：模型响应超过 120 秒，请稍后重试。"
     except Exception as exc:
         # Do not expose provider internals or credentials, but preserve the actionable failure class.
         label = type(exc).__name__
