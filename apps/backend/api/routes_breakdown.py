@@ -20,6 +20,11 @@ from services.project_service import get_project_service
 
 router = APIRouter(tags=["breakdown"])
 
+STRUCTURE_TAGS = {
+    "开篇承诺", "人物定位", "规则展示", "目标确立", "压力升级",
+    "关系推进", "信息反转", "代价显现", "局势翻转", "章末悬念",
+}
+
 
 class BreakdownOptions(BaseModel):
     chapter_pattern: str = Field(default="auto", alias="chapterPattern")
@@ -134,6 +139,11 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
     chapter_structure = _chapter_structure_reference(analysis.get("studyCards"))
+    if not chapter_structure:
+        raise HTTPException(
+            status_code=409,
+            detail="该拆书记录来自旧版，十章结构不含安全的抽象标签，不能带入当前项目。请重新分析参考书后再设为主脑洞。",
+        )
     style_profile = analysis.get("styleProfile") if isinstance(analysis.get("styleProfile"), dict) else {}
     source_path = analysis_path.parent / "source.txt"
     reused_phrase = _candidate_source_overlap(idea, source_path)
@@ -254,8 +264,9 @@ async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: lis
             "chapterTitle": chapter["title"],
             "chunkAnalyses": by_chapter.get(index, []),
             "requirements": [
-                "只分析结构机制，不复述原文或引用长段落。",
-                "输出 JSON 对象，字段：function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
+            "只分析结构机制，不复述原文或引用长段落。",
+                "输出 JSON 对象，字段：structureTag, function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
+                "structureTag 必须且只能从以下标签选择一个：开篇承诺、人物定位、规则展示、目标确立、压力升级、关系推进、信息反转、代价显现、局势翻转、章末悬念。",
                 "每个字段不超过 180 字。",
             ],
         }
@@ -270,12 +281,16 @@ async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: lis
         fields = ("function", "readerQuestion", "conflict", "informationShift", "relationshipShift", "endHook")
         if not all(str(parsed.get(field) or "").strip() for field in fields):
             raise ValueError(f"第 {index} 章研究卡结构不完整")
+        structure_tag = str(parsed.get("structureTag") or "").strip()
+        if structure_tag not in STRUCTURE_TAGS:
+            raise ValueError(f"第 {index} 章结构标签无效")
         return {
             "id": f"study-chapter-{index}",
             "chapterIndex": index,
             "chapterTitle": str(chapter["title"]),
             "evidence": chapter["evidence"],
             "status": "AI 已分析",
+            "structureTag": structure_tag,
             **{field: str(parsed[field]).strip()[:600] for field in fields},
         }
 
@@ -473,10 +488,10 @@ def _chapter_structure_reference(value: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         index = int(item.get("chapterIndex") or 0)
-        function = str(item.get("function") or "").strip()
-        if index <= 0 or not function:
+        structure_tag = str(item.get("structureTag") or "").strip()
+        if index <= 0 or structure_tag not in STRUCTURE_TAGS:
             continue
-        reference.append({"chapterIndex": index, "structuralFunction": function[:400]})
+        reference.append({"chapterIndex": index, "structuralFunction": structure_tag})
     return reference[:10]
 
 
@@ -556,6 +571,7 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
             "chapterTitle": str(item.get("chapterTitle") or chapter["title"]).strip(),
             "evidence": chapter["evidence"],
             "status": "AI 已分析",
+            "structureTag": str(item.get("structureTag") or "").strip(),
             **{field: str(item[field]).strip()[:600] for field in fields},
         })
     mother_cards: list[dict[str, Any]] = []
@@ -578,7 +594,12 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
         })
     raw_style = payload.get("styleProfile") if isinstance(payload.get("styleProfile"), dict) else {}
     style_fields = ("narrativePerspective", "sentenceRhythm", "languageTexture", "dialogueStrategy", "hookTechnique", "avoidReuse")
-    if len(study_cards) != len(chapter_by_index) or len(mother_cards) < 3 or not all(str(raw_style.get(field) or "").strip() for field in style_fields):
+    if (
+        len(study_cards) != len(chapter_by_index)
+        or any(card["structureTag"] not in STRUCTURE_TAGS for card in study_cards)
+        or len(mother_cards) < 3
+        or not all(str(raw_style.get(field) or "").strip() for field in style_fields)
+    ):
         return None
     style_profile = {field: str(raw_style[field]).strip()[:500] for field in style_fields}
     return {"studyCards": study_cards, "motherCards": mother_cards, "styleProfile": style_profile}

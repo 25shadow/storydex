@@ -1,6 +1,7 @@
 import pytest
 
 from services.book_breakdown_service import MAX_BYTES, analyze_novel, decode_novel, reference_chapter_chunks
+from api.routes_breakdown import _chapter_structure_reference
 
 
 def test_detects_chinese_chapters_and_evidence_lines():
@@ -60,3 +61,19 @@ def test_reference_chunks_keep_all_text_from_a_long_chapter():
     assert len(chunks) == 4
     assert [item["chapterIndex"] for item in chunks] == [1, 1, 1, 2]
     assert sum(len(item["text"]) for item in chunks) >= 13100
+
+
+def test_chapter_structure_reference_excludes_reference_story_details():
+    reference = _chapter_structure_reference([
+        {
+            "chapterIndex": 1,
+            "structureTag": "规则展示",
+            "function": "通过时间静止的冷却限制和赌局冲突完成设定揭秘。",
+            "conflict": "主角拖延对手以等待冷却结束。",
+        }
+    ])
+
+    assert reference == [{"chapterIndex": 1, "structuralFunction": "规则展示"}]
+    assert "时间静止" not in str(reference)
+    assert "赌局" not in str(reference)
+    assert "冷却" not in str(reference)

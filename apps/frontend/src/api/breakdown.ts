@@ -34,6 +34,7 @@ export interface StudyCard {
   chapterIndex: number;
   chapterTitle: string;
   function: string;
+  structureTag?: string;
   evidence: Record<string, number>;
   status: string;
   readerQuestion?: string;

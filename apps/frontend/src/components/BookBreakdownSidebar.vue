@@ -48,6 +48,7 @@
         <div class="breakdown-section-title">章节研究卡</div>
         <button class="study-card" :class="{ active: activeStudyCardId === card.id }" v-for="card in result.studyCards" :key="card.id" type="button" @click="toggleStudyCard(card.id)">
           <strong>第 {{ card.chapterIndex }} 章 · {{ card.chapterTitle }}</strong>
+          <small v-if="card.structureTag" class="study-card-tag">结构标签：{{ card.structureTag }}</small>
           <p>{{ card.function }}</p>
           <div v-if="activeStudyCardId === card.id" class="card-details">
             <p><b>读者问题：</b>{{ card.readerQuestion }}</p>
