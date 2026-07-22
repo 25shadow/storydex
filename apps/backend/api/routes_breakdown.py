@@ -271,16 +271,27 @@ async def _generate_ideas_with_ai(
     target_audience: str,
 ) -> tuple[list[dict[str, Any]], str, str]:
     """Use the configured Coomi provider only; never synthesize fallback ideas."""
+    compact_cards = [
+        {
+            "id": str(card.get("id") or ""),
+            "title": str(card.get("title") or "")[:100],
+            "type": str(card.get("type") or "")[:64],
+            "mechanism": str(card.get("mechanism") or "")[:420],
+            "useFor": _string_list(card.get("useFor"))[:3],
+            "doNotReuse": _string_list(card.get("doNotReuse"))[:3],
+        }
+        for card in cards
+    ]
     prompt = {
         "projectName": project_name,
         "genre": genre,
         "tone": tone,
         "targetAudience": target_audience,
-        "motherCards": cards,
+        "motherCards": compact_cards,
         "requirements": [
-            "生成 6 条彼此差异明显的新书脑洞。",
+            "生成 3 条彼此差异明显、可直接立项的新书脑洞。",
             "只能使用母卡的抽象机制，不能复用参考书人物、设定、情节、谜底或表达。",
-            "每条包含 title、logline、storyEngine、openingPlan。",
+            "每条包含 title（不超过 20 字）、logline（不超过 120 字）、storyEngine（不超过 160 字）、openingPlan（不超过 180 字）。",
             "只输出 JSON 数组，不要 Markdown。",
         ],
     }
