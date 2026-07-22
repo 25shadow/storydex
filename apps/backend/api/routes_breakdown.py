@@ -207,34 +207,98 @@ async def _analyze_reference_with_ai(
         return None, "AI 拆书分析超时：参考书前十章较长，请稍后重试。"
     except Exception:
         return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
+    try:
+        study_cards = await _build_study_cards_with_ai(result, chunk_analyses)
+    except asyncio.TimeoutError:
+        return None, "AI 章节研究卡生成超时：请稍后重试。"
+    except Exception:
+        return None, "AI 章节研究卡生成失败：请确认模型服务可用后重试。"
+    try:
+        materials = await _build_mother_cards_and_style_with_ai(study_cards)
+    except asyncio.TimeoutError:
+        return None, "AI 母卡与风格汇总超时：请稍后重试。"
+    except Exception:
+        return None, "AI 母卡与风格汇总失败：请确认模型服务可用后重试。"
+    if not materials:
+        return None, "AI 返回的母卡或风格结构不完整，请重试。"
+    return {"studyCards": study_cards, **materials}, ""
+
+
+async def _build_study_cards_with_ai(result: dict[str, Any], chunk_analyses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_chapter: dict[int, list[dict[str, Any]]] = {}
+    for item in chunk_analyses:
+        index = int(item.get("chapterIndex") or 0)
+        if index > 0:
+            by_chapter.setdefault(index, []).append(item)
+    semaphore = asyncio.Semaphore(3)
+
+    async def build(chapter: dict[str, Any]) -> dict[str, Any]:
+        index = int(chapter["index"])
+        prompt = {
+            "task": "基于本章分块事实，生成一张小说结构研究卡。",
+            "chapterIndex": index,
+            "chapterTitle": chapter["title"],
+            "chunkAnalyses": by_chapter.get(index, []),
+            "requirements": [
+                "只分析结构机制，不复述原文或引用长段落。",
+                "输出 JSON 对象，字段：function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
+                "每个字段不超过 180 字。",
+            ],
+        }
+        async with semaphore:
+            response = await _call_creative_provider(
+                system="你是小说章节结构编辑。只提炼本章节奏和叙事功能，不做改写。",
+                prompt=prompt,
+                purpose="breakdown_chapter_card",
+                timeout=75,
+            )
+        parsed = _extract_json_object(str(getattr(response, "content", "") or ""))
+        fields = ("function", "readerQuestion", "conflict", "informationShift", "relationshipShift", "endHook")
+        if not all(str(parsed.get(field) or "").strip() for field in fields):
+            raise ValueError(f"第 {index} 章研究卡结构不完整")
+        return {
+            "id": f"study-chapter-{index}",
+            "chapterIndex": index,
+            "chapterTitle": str(chapter["title"]),
+            "evidence": chapter["evidence"],
+            "status": "AI 已分析",
+            **{field: str(parsed[field]).strip()[:600] for field in fields},
+        }
+
+    chapters = [item for item in result.get("selectedChapters", []) if isinstance(item, dict)]
+    cards = await asyncio.gather(*(build(chapter) for chapter in chapters))
+    return sorted(cards, key=lambda item: int(item["chapterIndex"]))
+
+
+async def _build_mother_cards_and_style_with_ai(study_cards: list[dict[str, Any]]) -> dict[str, Any] | None:
+    compact_cards = [
+        {
+            "chapterIndex": card["chapterIndex"],
+            "function": str(card["function"])[:180],
+            "conflict": str(card["conflict"])[:180],
+            "informationShift": str(card["informationShift"])[:180],
+            "endHook": str(card["endHook"])[:180],
+        }
+        for card in study_cards
+    ]
     prompt = {
-        "task": "对热榜书前十章做结构研究，为原创新书提供抽象参考。",
-        "chunkAnalyses": chunk_analyses,
+        "task": "从十章结构研究卡中提炼原创可用的母卡与写作风格方法。",
+        "studyCards": compact_cards,
         "requirements": [
-            "只分析结构机制，不复述原文，不输出原书的长段落。",
-            "studyCards 必须与每章一一对应，字段：chapterIndex, chapterTitle, function, readerQuestion, conflict, informationShift, relationshipShift, endHook。",
-            "motherCards 生成 3 至 6 张抽象创意母卡，字段：id, title, type, mechanism, useFor, doNotReuse。",
-            "styleProfile 输出写作风格研究，字段：narrativePerspective, sentenceRhythm, languageTexture, dialogueStrategy, hookTechnique, avoidReuse。只描述可迁移的写法，不引用原句或复用专有表达。",
-            "doNotReuse 必须包含对人物、设定、事件链、表达的禁止复用约束。",
-            "只输出 JSON 对象：{studyCards: [], motherCards: []}。",
+            "motherCards 生成 3 至 6 张抽象创意母卡，字段：title, type, mechanism, useFor, doNotReuse。",
+            "styleProfile 输出字段：narrativePerspective, sentenceRhythm, languageTexture, dialogueStrategy, hookTechnique, avoidReuse。",
+            "只描述可迁移结构与写法，不包含原书人物、设定、事件或原句。",
+            "只输出 JSON 对象：{motherCards: [], styleProfile: {}}。",
         ],
     }
-    try:
-        response = await _call_creative_provider(
-            system="你是专业小说编辑和拆书研究员。严格区分结构规律与原书具体内容，不生成改写或复述。",
-            prompt=prompt,
-            purpose="breakdown_reference_analysis",
-            timeout=180,
-        )
-        payload = _extract_json_object(str(getattr(response, "content", "") or ""))
-        normalized = _normalize_reference_analysis(payload, result)
-        if normalized:
-            return normalized, ""
-        return None, "AI 返回的拆书结构不完整，请重试。"
-    except asyncio.TimeoutError:
-        return None, "AI 拆书汇总超时：模型在 180 秒内未完成十章研究卡，请稍后重试。"
-    except Exception:
-        return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
+    response = await _call_creative_provider(
+        system="你是小说编辑。提炼抽象创作机制和风格方法，严格避免复述参考书具体内容。",
+        prompt=prompt,
+        purpose="breakdown_materials_analysis",
+        timeout=90,
+    )
+    payload = _extract_json_object(str(getattr(response, "content", "") or ""))
+    return _normalize_mother_cards_and_style(payload)
 
 
 async def _analyze_chunks_with_ai(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -485,6 +549,36 @@ def _normalize_reference_analysis(payload: dict[str, Any], result: dict[str, Any
         return None
     style_profile = {field: str(raw_style[field]).strip()[:500] for field in style_fields}
     return {"studyCards": study_cards, "motherCards": mother_cards, "styleProfile": style_profile}
+
+
+def _normalize_mother_cards_and_style(payload: dict[str, Any]) -> dict[str, Any] | None:
+    raw_mother = payload.get("motherCards") if isinstance(payload.get("motherCards"), list) else []
+    mother_cards: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_mother[:6]):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        mechanism = str(item.get("mechanism") or "").strip()
+        use_for = _string_list(item.get("useFor"))
+        do_not_reuse = _string_list(item.get("doNotReuse"))
+        if not title or not mechanism or not use_for or not do_not_reuse:
+            continue
+        mother_cards.append({
+            "id": f"mother-ai-{index + 1}",
+            "title": title[:100],
+            "type": str(item.get("type") or "creative_mechanism")[:64],
+            "mechanism": mechanism[:700],
+            "useFor": [str(value)[:80] for value in use_for[:5]],
+            "doNotReuse": [str(value)[:120] for value in do_not_reuse[:6]],
+        })
+    raw_style = payload.get("styleProfile") if isinstance(payload.get("styleProfile"), dict) else {}
+    style_fields = ("narrativePerspective", "sentenceRhythm", "languageTexture", "dialogueStrategy", "hookTechnique", "avoidReuse")
+    if len(mother_cards) < 3 or not all(str(raw_style.get(field) or "").strip() for field in style_fields):
+        return None
+    return {
+        "motherCards": mother_cards,
+        "styleProfile": {field: str(raw_style[field]).strip()[:500] for field in style_fields},
+    }
 
 
 def _string_list(value: Any) -> list[str]:
