@@ -34,6 +34,9 @@
           <div><strong>{{ result.characterCount.toLocaleString() }}</strong><span>字</span></div>
           <div><strong>{{ result.encoding }}</strong><span>编码</span></div>
         </div>
+        <button v-if="ideaResult" class="breakdown-primary idea-jump" type="button" @click="scrollToIdeas">
+          <span class="material-symbols-rounded">auto_awesome</span>查看 {{ ideaResult.ideas.length }} 条原创脑洞候选
+        </button>
         <div v-if="result.warnings.length" class="breakdown-warnings">
           <div v-for="warning in result.warnings" :key="warning"><span class="material-symbols-rounded">info</span>{{ warning }}</div>
         </div>
@@ -100,7 +103,7 @@
           </button>
         </section>
         <p v-if="ideaError" class="breakdown-error">{{ ideaError }}</p>
-        <section v-if="ideaResult" class="idea-results">
+        <section v-if="ideaResult" ref="ideaResultsRef" class="idea-results">
           <div class="breakdown-next-title">原创脑洞候选</div>
           <p class="breakdown-muted">{{ ideaResult.notice }}</p>
           <div v-for="idea in ideaResult.ideas" :key="idea.id" class="idea-card" :class="{ active: activeIdeaId === idea.id }" @click="toggleIdea(idea.id)">
@@ -154,6 +157,7 @@ const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
 const ideaSelecting = ref(false);
 const selectedIdeaId = ref("");
+const ideaResultsRef = ref<HTMLElement | null>(null);
 const workspaceStore = useWorkspaceStore();
 const breakdownAgentStore = useBreakdownAgentStore();
 const projectName = computed(() => workspaceStore.currentProject?.projectName || "当前 Storydex 项目");
@@ -305,6 +309,7 @@ async function loadSavedBreakdown(analysisId: string): Promise<void> {
 }
 watch(() => props.analysisId, (analysisId) => { void loadSavedBreakdown(analysisId || ""); }, { immediate: true });
 function toggleStudyCard(id: string): void { activeStudyCardId.value = activeStudyCardId.value === id ? "" : id; }
+function scrollToIdeas(): void { ideaResultsRef.value?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 function toggleIdea(id: string): void { activeIdeaId.value = activeIdeaId.value === id ? "" : id; }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 </script>
@@ -334,6 +339,7 @@ h2 { margin: 5px 0; font-size: 20px; }
 .breakdown-summary strong, .breakdown-summary span { display: block; }
 .breakdown-summary strong { font-size: 15px; }
 .breakdown-summary span { margin-top: 3px; color: var(--text-muted); font-size: 10px; }
+.idea-jump { margin-top: 12px; }
 .breakdown-warnings { margin-top: 12px; color: var(--warning); font-size: 11px; line-height: 1.5; }
 .breakdown-warnings div { display: flex; gap: 5px; margin: 5px 0; }
 .breakdown-warnings .material-symbols-rounded { font-size: 15px; }
