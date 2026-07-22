@@ -79,6 +79,7 @@ export interface IdeaSelectionResult {
   selectedIdeaId: string;
   projectName: string;
   idea: NewBookIdea;
+  chapterStructureCount: number;
 }
 
 export interface BreakdownHistoryItem {

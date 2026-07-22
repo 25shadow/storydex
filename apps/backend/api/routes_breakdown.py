@@ -122,6 +122,12 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
     idea = next((item for item in ideas if isinstance(item, dict) and str(item.get("id") or "") == payload.idea_id), None)
     if idea is None:
         raise HTTPException(status_code=404, detail="未找到所选的新书脑洞。")
+    analysis_path = get_settings().global_root / "breakdowns" / payload.analysis_id / "analysis.json"
+    try:
+        analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="拆书结构记录无法读取。") from exc
+    chapter_structure = _chapter_structure_reference(analysis.get("studyCards"))
 
     project = get_project_service().current_project()
     project_root = Path(project["workspaceRoot"])
@@ -135,10 +141,16 @@ def select_breakdown_idea(payload: IdeaSelectionRequest, request: Request) -> di
         "ideaId": payload.idea_id,
         "projectName": str(project.get("projectName") or project_root.name),
         "idea": idea,
+        "chapterStructureReference": chapter_structure,
     }
     active_path.write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
     return success_response(
-        data={"selectedIdeaId": payload.idea_id, "projectName": selected["projectName"], "idea": idea},
+        data={
+            "selectedIdeaId": payload.idea_id,
+            "projectName": selected["projectName"],
+            "idea": idea,
+            "chapterStructureCount": len(chapter_structure),
+        },
         trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
         audit=[{"action": "select_breakdown_idea", "analysisId": payload.analysis_id, "ideaRunId": payload.idea_run_id, "ideaId": payload.idea_id}],
     ).model_dump(by_alias=True)
@@ -368,6 +380,21 @@ async def _generate_ideas_with_ai(
         # Do not expose provider internals or credentials, but preserve the actionable failure class.
         label = type(exc).__name__
         return [], "ai_unavailable", f"AI 脑洞生成失败（{label}）：请检查模型服务后重试。"
+
+
+def _chapter_structure_reference(value: Any) -> list[dict[str, Any]]:
+    """Keep only chapter-level pacing functions, never reference-book story details."""
+    cards = value if isinstance(value, list) else []
+    reference: list[dict[str, Any]] = []
+    for item in cards:
+        if not isinstance(item, dict):
+            continue
+        index = int(item.get("chapterIndex") or 0)
+        function = str(item.get("function") or "").strip()
+        if index <= 0 or not function:
+            continue
+        reference.append({"chapterIndex": index, "structuralFunction": function[:400]})
+    return reference[:10]
 
 
 async def _call_creative_provider(*, system: str, prompt: dict[str, Any], purpose: str, timeout: int) -> Any:

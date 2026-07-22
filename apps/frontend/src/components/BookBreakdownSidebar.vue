@@ -93,7 +93,7 @@
               :disabled="ideaSelecting || selectedIdeaId === idea.id"
               @click.stop="selectIdea(idea.id)"
             >
-              {{ selectedIdeaId === idea.id ? "已设为本书主脑洞" : ideaSelecting ? "正在确认..." : "设为本书主脑洞" }}
+              {{ selectedIdeaId === idea.id ? "已设为主脑洞并带入十章结构" : ideaSelecting ? "正在确认..." : "设为本书主脑洞" }}
             </button>
           </div>
         </section>

@@ -582,6 +582,20 @@ class StorydexContextAssemblerService:
         cleaned_constraints = [str(item).strip()[:180] for item in constraints if str(item).strip()]
         if cleaned_constraints:
             lines.append("Originality guard: " + "; ".join(cleaned_constraints[:3]))
+        structure_reference = payload.get("chapterStructureReference") if isinstance(payload.get("chapterStructureReference"), list) else []
+        rhythm_lines: List[str] = []
+        for item in structure_reference[:10]:
+            if not isinstance(item, dict):
+                continue
+            index = int(item.get("chapterIndex") or 0)
+            function = str(item.get("structuralFunction") or "").strip()
+            if index > 0 and function:
+                rhythm_lines.append(f"Chapter {index}: {function[:400]}")
+        if rhythm_lines:
+            lines.extend([
+                "Ten-chapter structural rhythm: use these as pacing functions only; create fresh characters, conflicts, information, and hooks for this project.",
+                *rhythm_lines,
+            ])
         return "\n".join(lines), [relative_path]
 
     @staticmethod
