@@ -30,25 +30,6 @@
         <span :class="['material-symbols-rounded', item.iconClass]">{{ item.icon }}</span>
       </button>
 
-      <div ref="accountMenuRef" class="activity-settings-wrap">
-        <button
-          class="activity-icon"
-          :class="{ active: openMenu === 'account' }"
-          :title="accountButtonTitle"
-          type="button"
-          aria-haspopup="dialog"
-          :aria-expanded="openMenu === 'account'"
-          @click="toggleMenu('account')"
-        >
-          <span v-if="authStore.isAuthenticated" class="activity-account-badge">{{ authStore.initials }}</span>
-          <span v-else class="material-symbols-rounded">account_circle</span>
-        </button>
-
-        <transition name="settings-menu">
-          <ActivityAccountMenu v-if="openMenu === 'account'" />
-        </transition>
-      </div>
-
       <div ref="settingsMenuRef" class="activity-settings-wrap">
         <button
           class="activity-icon"
@@ -107,15 +88,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import ActivityAccountMenu from "@/components/ActivityAccountMenu.vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { themeOptions } from "@/constants/themes";
 import type { ThemeCode } from "@/constants/themes";
-import { useAuthStore } from "@/stores/auth";
 import { useGitStore } from "@/stores/git";
 import { useUiStore } from "@/stores/ui";
 
-type OpenMenu = "account" | "settings" | null;
+type OpenMenu = "settings" | null;
 interface ActivityItem {
   id: string;
   label: string;
@@ -124,10 +103,8 @@ interface ActivityItem {
 }
 
 const uiStore = useUiStore();
-const authStore = useAuthStore();
 const gitStore = useGitStore();
 
-const accountMenuRef = ref<HTMLElement | null>(null);
 const settingsMenuRef = ref<HTMLElement | null>(null);
 const openMenu = ref<OpenMenu>(null);
 
@@ -143,10 +120,6 @@ const topItems: ActivityItem[] = [
 const bottomItems: ActivityItem[] = [
   { id: "export", label: "导出", icon: "upload" }
 ];
-
-const accountButtonTitle = computed(() =>
-  authStore.isAuthenticated ? `${authStore.displayName} · 账号系统` : "账号系统"
-);
 
 onMounted(() => {
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
@@ -169,9 +142,6 @@ function handleActivitySelect(activityId: string): void {
 
 function toggleMenu(menu: Exclude<OpenMenu, null>): void {
   openMenu.value = openMenu.value === menu ? null : menu;
-  if (openMenu.value === "account" && authStore.isAuthenticated) {
-    void authStore.refreshSummary({ silentAuthFailure: false });
-  }
 }
 
 function closeMenus(): void {
@@ -206,7 +176,7 @@ function handleDocumentPointerDown(event: PointerEvent): void {
     return;
   }
 
-  if (accountMenuRef.value?.contains(target) || settingsMenuRef.value?.contains(target)) {
+  if (settingsMenuRef.value?.contains(target)) {
     return;
   }
 
@@ -231,18 +201,6 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
 
 .activity-icon.is-collapsed {
   opacity: 0.6;
-}
-
-.activity-account-badge {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .activity-badge {

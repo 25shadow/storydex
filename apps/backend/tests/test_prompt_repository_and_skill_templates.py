@@ -26,6 +26,23 @@ def test_prompt_repository_reads_categories_prompt_blocks_and_placeholders(monke
     assert service.read_repository(category="角色创作")["items"] == []
 
 
+def test_prompt_repository_creates_user_prompt(monkeypatch, tmp_path):
+    root = tmp_path / "prompts"
+    monkeypatch.setenv("STORYDEX_PROMPT_REPOSITORY_ROOT", str(root))
+    service = PromptRepositoryService()
+
+    created = service.create_prompt(
+        title="章节节奏检查",
+        category="编辑审校",
+        summary="检查当前章节的节奏问题。",
+        prompt_text="请检查[章节]的节奏。",
+    )
+
+    assert created["relativePath"] == "编辑审校/章节节奏检查.md"
+    assert created["placeholders"] == ["[章节]"]
+    assert service.read_repository()["items"][0]["title"] == "章节节奏检查"
+
+
 def test_default_agent_skill_templates_are_detailed_universal_and_migrate_legacy(tmp_path):
     service = StoryProjectService()
     service.ensure_project_structure(tmp_path)

@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routes_agent import router as agent_router
-from api.routes_auth import router as auth_router
 from api.routes_file import router as file_router
 from api.routes_help import router as help_router
 from api.routes_presets import router as presets_router
@@ -51,7 +50,6 @@ app.include_router(file_router, prefix="/api/v1")
 app.include_router(help_router, prefix="/api/v1")
 app.include_router(story_router, prefix="/api/v1")
 app.include_router(wiki_router, prefix="/api/v1")
-app.include_router(auth_router, prefix="/api/v1")
 app.include_router(presets_router, prefix="/api/v1")
 
 

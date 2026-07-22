@@ -8,7 +8,30 @@
       <button class="prompt-icon-button" type="button" title="刷新指令仓库" @click="loadRepository">
         <span class="material-symbols-rounded">refresh</span>
       </button>
+      <button class="prompt-icon-button" type="button" title="新增指令" @click="showCreateForm = true">
+        <span class="material-symbols-rounded">add</span>
+      </button>
     </header>
+
+    <div v-if="showCreateForm" class="prompt-create-overlay" @click.self="showCreateForm = false">
+      <form class="prompt-create-form" @submit.prevent="createPrompt">
+        <div class="prompt-create-heading">
+          <h3>新增指令</h3>
+          <button class="prompt-icon-button" type="button" title="关闭" @click="showCreateForm = false">
+            <span class="material-symbols-rounded">close</span>
+          </button>
+        </div>
+        <label>标题<input v-model.trim="createForm.title" required maxlength="120" placeholder="例如：检查章节节奏" /></label>
+        <label>分类<input v-model.trim="createForm.category" required maxlength="80" placeholder="例如：编辑审校" /></label>
+        <label>说明<input v-model.trim="createForm.summary" maxlength="500" placeholder="一句话说明用途" /></label>
+        <label>指令正文<textarea v-model="createForm.promptText" required rows="10" placeholder="输入要交给 Agent 的指令，可使用 [参数] 占位符。" /></label>
+        <div v-if="createError" class="prompt-feedback is-error">{{ createError }}</div>
+        <div class="prompt-create-actions">
+          <button type="button" class="prompt-secondary-action" @click="showCreateForm = false">取消</button>
+          <button type="submit" class="prompt-primary-action" :disabled="creating">{{ creating ? "保存中..." : "保存指令" }}</button>
+        </div>
+      </form>
+    </div>
 
     <template v-if="selectedItem">
       <div class="prompt-detail-toolbar">
@@ -119,7 +142,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { describeTransportError } from "@/api/client";
-import { fetchPromptRepository } from "@/api/help";
+import { createPromptRepositoryItem, fetchPromptRepository } from "@/api/help";
 import type { PromptRepositoryCategory, PromptRepositoryItem } from "@/api/help";
 import { useAgentStore } from "@/stores/agent";
 import { useUiStore } from "@/stores/ui";
@@ -137,6 +160,10 @@ const searchQuery = ref("");
 const selectedCategory = ref("");
 const selectedId = ref("");
 const feedback = ref("");
+const showCreateForm = ref(false);
+const creating = ref(false);
+const createError = ref("");
+const createForm = ref({ title: "", category: "通用", summary: "", promptText: "" });
 let feedbackTimer: number | null = null;
 
 const selectedItem = computed(() => items.value.find((item) => item.id === selectedId.value) || null);
@@ -181,6 +208,24 @@ async function loadRepository(): Promise<void> {
     errorMessage.value = describeTransportError(error, "无法读取指令仓库。");
   } finally {
     loading.value = false;
+  }
+}
+
+async function createPrompt(): Promise<void> {
+  if (creating.value) return;
+  createError.value = "";
+  creating.value = true;
+  try {
+    const result = await createPromptRepositoryItem(createForm.value);
+    items.value = [result.data, ...items.value.filter((item) => item.id !== result.data.id)];
+    selectedId.value = result.data.id;
+    showCreateForm.value = false;
+    createForm.value = { title: "", category: "通用", summary: "", promptText: "" };
+    showFeedback("指令已保存。");
+  } catch (error: unknown) {
+    createError.value = describeTransportError(error, "无法保存指令。");
+  } finally {
+    creating.value = false;
   }
 }
 
@@ -236,6 +281,7 @@ function showFeedback(message: string): void {
 
 <style scoped>
 .prompt-repository-panel {
+  position: relative;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -244,6 +290,16 @@ function showFeedback(message: string): void {
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
 }
+
+.prompt-create-overlay { position: absolute; z-index: 10; inset: 0; display: grid; place-items: center; padding: 18px; background: color-mix(in srgb, var(--bg-main) 72%, transparent); }
+.prompt-create-form { width: min(420px, 100%); max-height: 100%; overflow: auto; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 7px; color: var(--text-primary); background: var(--bg-sidebar); box-shadow: 0 16px 40px rgb(15 23 42 / 18%); }
+.prompt-create-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.prompt-create-heading h3 { margin: 0; font-size: 15px; }
+.prompt-create-form label { display: grid; gap: 5px; margin-top: 10px; color: var(--text-secondary); font-size: 11px; }
+.prompt-create-form input, .prompt-create-form textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border-subtle); border-radius: 5px; padding: 8px; resize: vertical; color: var(--text-primary); background: var(--bg-main); font: inherit; font-size: 12px; }
+.prompt-create-form input:focus, .prompt-create-form textarea:focus { outline: 1px solid var(--accent); }
+.prompt-create-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 14px; }
+.prompt-create-actions button { min-height: 34px; }
 
 .prompt-repository-header {
   min-height: 58px;

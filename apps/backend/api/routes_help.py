@@ -4,12 +4,23 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from api.response import ApiEnvelope, ApiTrace, success_response
 from services.help_guide_service import get_help_guide_service
 from services.prompt_repository_service import get_prompt_repository_service
 
 router = APIRouter(tags=["help"])
+
+
+class PromptCreateRequest(BaseModel):
+    title: str
+    category: str
+    summary: str = ""
+    prompt_text: str = Field(alias="promptText")
+    file_name: str = Field(default="", alias="fileName")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 def _trace(started: float, trace_id: str) -> ApiTrace:
@@ -62,4 +73,22 @@ def read_prompt_repository(
                 "count": len(data.get("items") or []),
             }
         ],
+    )
+
+
+@router.post("/help/prompts", response_model=ApiEnvelope)
+def create_prompt_repository_item(payload: PromptCreateRequest) -> ApiEnvelope:
+    started = perf_counter()
+    trace_id = str(uuid4())
+    item = get_prompt_repository_service().create_prompt(
+        title=payload.title,
+        category=payload.category,
+        summary=payload.summary,
+        prompt_text=payload.prompt_text,
+        file_name=payload.file_name,
+    )
+    return success_response(
+        data=item,
+        trace=_trace(started, trace_id),
+        audit=[{"action": "create_prompt_repository_item", "id": item.get("id", "")}],
     )

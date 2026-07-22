@@ -41,6 +41,14 @@ export interface PromptRepositoryResponse {
   items: PromptRepositoryItem[];
 }
 
+export interface CreatePromptRequest {
+  title: string;
+  category: string;
+  summary?: string;
+  promptText: string;
+  fileName?: string;
+}
+
 export class HelpApiError extends ApiResponseError {}
 
 export async function fetchHelpGuide(): Promise<ApiResult<HelpGuideResponse>> {
@@ -64,6 +72,20 @@ export async function fetchPromptRepository(params: { q?: string; category?: str
   });
   try {
     return unwrapEnvelope(response.data, "Prompt repository request failed.");
+  } catch (error: unknown) {
+    if (error instanceof ApiResponseError) {
+      throw new HelpApiError(error.message, error.code, error.details, error.trace, error.audit);
+    }
+    throw error;
+  }
+}
+
+export async function createPromptRepositoryItem(
+  payload: CreatePromptRequest
+): Promise<ApiResult<PromptRepositoryItem>> {
+  const response = await apiClient.post<ApiEnvelope<PromptRepositoryItem>>("/help/prompts", payload);
+  try {
+    return unwrapEnvelope(response.data, "Creating prompt failed.");
   } catch (error: unknown) {
     if (error instanceof ApiResponseError) {
       throw new HelpApiError(error.message, error.code, error.details, error.trace, error.audit);

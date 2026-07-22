@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const desktopRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopRoot, "..", "..");
@@ -164,7 +165,19 @@ function readPyvenvHome(sourceRoot) {
   for (const line of content.split(/\r?\n/)) {
     const match = line.match(/^\s*home\s*=\s*(.+?)\s*$/i);
     if (match?.[1]) {
-      return match[1].trim();
+      const configuredHome = match[1].trim();
+      if (fs.existsSync(configuredHome) && hasRootPythonExecutable(configuredHome)) {
+        return configuredHome;
+      }
+
+      const pythonCommand = process.platform === "win32"
+        ? path.join(sourceRoot, "Scripts", "python.exe")
+        : path.join(sourceRoot, "bin", "python");
+      const result = spawnSync(pythonCommand, ["-c", "import sys; print(sys.base_prefix)"], {
+        encoding: "utf8"
+      });
+      const basePrefix = String(result.stdout || "").trim();
+      return result.status === 0 && basePrefix ? basePrefix : configuredHome;
     }
   }
   return "";
@@ -215,7 +228,11 @@ function hasRootPythonExecutable(rootPath) {
   const candidates =
     process.platform === "win32"
       ? [path.join(rootPath, "python.exe")]
-      : [path.join(rootPath, "bin", "python"), path.join(rootPath, "python")];
+      : [
+          path.join(rootPath, "bin", "python"),
+          path.join(rootPath, "bin", "python3"),
+          path.join(rootPath, "python")
+        ];
   return candidates.some((candidate) => fs.existsSync(candidate));
 }
 
@@ -239,6 +256,15 @@ function copyPortablePythonFromVenv(sourceRoot, targetRoot) {
 
   resetDirectory(targetRoot);
   copyDirectoryContents(baseRoot, targetRoot, shouldCopyPythonRuntime);
+
+  if (process.platform !== "win32") {
+    const pythonTarget = path.join(targetRoot, "bin", "python");
+    const python3Target = path.join(targetRoot, "bin", "python3");
+    const python39Target = path.join(targetRoot, "bin", "python3.9");
+    if (!fs.existsSync(pythonTarget) && (fs.existsSync(python3Target) || fs.existsSync(python39Target))) {
+      fs.symlinkSync(fs.existsSync(python3Target) ? "python3" : "python3.9", pythonTarget);
+    }
+  }
 
   const sourceSitePackages = resolveSitePackagesDirectory(sourceRoot);
   const targetSitePackages = resolveSitePackagesDirectory(targetRoot);

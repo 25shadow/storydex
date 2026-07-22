@@ -5,15 +5,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
 import WorkbenchLayout from "@/layouts/WorkbenchLayout.vue";
-import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
 
-const authStore = useAuthStore();
 const workspaceStore = useWorkspaceStore();
 let reconnectTimer: number | null = null;
 
 async function bootstrapWorkbench(force = false): Promise<void> {
-  await authStore.bootstrap();
   await workspaceStore.bootstrapGlobalState();
   await workspaceStore.bootstrap(force);
 }
