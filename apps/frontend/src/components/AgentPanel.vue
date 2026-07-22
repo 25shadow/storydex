@@ -55,15 +55,50 @@
         </div>
       </section>
 
-      <BreakdownAgentActivity v-else-if="breakdownAgentStore.hasTask" />
-
-      <section v-else-if="conversationRuns.length === 0" class="coomi-welcome">
+      <section v-else-if="conversationRuns.length === 0 && !breakdownAgentStore.hasTask" class="coomi-welcome">
         <img src="@/assets/storydex_icon_01.png" alt="Storydex" />
         <div class="coomi-welcome-title">Coomi 已就绪</div>
         <p class="coomi-welcome-copy">如果你有任何使用上的疑问，都可以向我询问。</p>
       </section>
 
       <section v-else class="coomi-runs">
+        <article v-if="breakdownAgentStore.task" class="coomi-run">
+          <div class="coomi-run-head">
+            <span>Coomi</span>
+            <span :class="['coomi-run-status', breakdownAgentStore.task.status]">{{ breakdownStatusLabel }}</span>
+            <span>{{ formatDate(new Date(breakdownAgentStore.task.updatedAt).toISOString()) }}</span>
+            <div class="coomi-run-actions">
+              <button
+                class="coomi-run-action danger"
+                type="button"
+                title="删除本轮"
+                aria-label="删除本轮"
+                @click="breakdownAgentStore.clear"
+              >
+                <span class="material-symbols-rounded">delete</span>
+              </button>
+            </div>
+          </div>
+          <div class="coomi-waterfall">
+            <section
+              v-for="event in breakdownAgentStore.task.events"
+              :key="event.id"
+              class="coomi-event type-phase"
+              :class="`status-${breakdownAgentStore.task.status}`"
+            >
+              <div class="coomi-event-head">
+                <span class="coomi-event-type">拆书规划 Agent</span>
+                <span class="coomi-event-time">{{ formatDate(new Date(event.timestamp).toISOString(), true) }}</span>
+              </div>
+              <div class="coomi-event-body">
+                <div class="coomi-phase-text" aria-live="polite">{{ event.content }}</div>
+              </div>
+            </section>
+            <div v-if="breakdownAgentStore.isRunning" class="coomi-running-tail" aria-live="polite">
+              <span>执行中</span><span class="coomi-running-dots"> · · ·</span>
+            </div>
+          </div>
+        </article>
         <article v-for="run in conversationRuns" :key="run.traceId" class="coomi-run">
           <div class="coomi-run-head">
             <span>Coomi</span>
@@ -593,7 +628,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 import AgentExecutionFloatBar from "@/components/AgentExecutionFloatBar.vue";
-import BreakdownAgentActivity from "@/components/BreakdownAgentActivity.vue";
 import CoomiConfigPanel from "@/components/CoomiConfigPanel.vue";
 import { useAgentStore } from "@/stores/agent";
 import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
@@ -710,6 +744,11 @@ const headerStatusLabel = computed(() => {
   const startedAt = agentStore.runStartedAt || Date.parse(agentStore.activeTraceRun?.createdAt || "") || runtimeNow.value;
   return `Coomi · Running ${formatRunDuration(runtimeNow.value - startedAt)}`;
 });
+const breakdownStatusLabel = computed(() => ({
+  running: "执行中",
+  completed: "已完成",
+  failed: "失败"
+}[breakdownAgentStore.task?.status || "running"]));
 const composerError = computed(() => {
   const message = agentStore.lastError.trim();
   if (!message || message === agentStore.activeTraceRun?.errorMessage?.trim()) {
