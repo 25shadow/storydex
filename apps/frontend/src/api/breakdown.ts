@@ -115,7 +115,7 @@ export interface BreakdownJobEvent {
 
 export interface BreakdownJob {
   jobId: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "partial" | "failed";
   events: BreakdownJobEvent[];
   result: BreakdownResult | null;
   error: string;
@@ -133,6 +133,11 @@ export async function analyzeBreakdown(fileName: string, contentBase64: string):
 export async function fetchBreakdownJob(jobId: string): Promise<ApiResult<BreakdownJob>> {
   const response = await apiClient.get<ApiEnvelope<BreakdownJob>>(`/breakdown/jobs/${encodeURIComponent(jobId)}`);
   return unwrapEnvelope(response.data, "拆书任务状态加载失败。");
+}
+
+export async function retryBreakdownRhythm(analysisId: string): Promise<ApiResult<{ jobId: string; status: string }>> {
+  const response = await apiClient.post<ApiEnvelope<{ jobId: string; status: string }>>(`/breakdown/${encodeURIComponent(analysisId)}/rhythm/retry`, {}, { timeout: 30000 });
+  return unwrapEnvelope(response.data, "继续节奏档案失败。");
 }
 
 export async function generateNewBookIdeas(payload: {

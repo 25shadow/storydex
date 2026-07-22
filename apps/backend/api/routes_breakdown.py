@@ -227,6 +227,24 @@ def breakdown_job(job_id: str, request: Request) -> dict[str, Any]:
     ).model_dump(by_alias=True)
 
 
+@router.post("/breakdown/{analysis_id}/rhythm/retry")
+async def retry_breakdown_rhythm(analysis_id: str, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", analysis_id):
+        raise HTTPException(status_code=400, detail="拆书记录标识无效。")
+    analysis_path = get_settings().global_root / "breakdowns" / analysis_id / "analysis.json"
+    try:
+        analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=404, detail="未找到可继续的拆书记录。") from exc
+    if not isinstance(analysis.get("studyCards"), list) or len(analysis["studyCards"]) != 10:
+        raise HTTPException(status_code=409, detail="该记录尚未完成章节研究，无法继续节奏档案。")
+    job_id = str(uuid4())
+    BREAKDOWN_JOBS[job_id] = {"status": "running", "events": [], "result": None, "error": ""}
+    _report_breakdown_job(job_id, "已载入保存的章节研究，继续生成逐章节奏档案。")
+    asyncio.create_task(_run_rhythm_retry_job(job_id, analysis_path, analysis))
+    return success_response(data={"jobId": job_id, "status": "running"}, trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4()))).model_dump(by_alias=True)
+
+
 def _report_breakdown_job(job_id: str, content: str) -> None:
     job = BREAKDOWN_JOBS.get(job_id)
     if job is None:
@@ -236,14 +254,27 @@ def _report_breakdown_job(job_id: str, content: str) -> None:
 
 async def _run_breakdown_job(job_id: str, raw: bytes, file_name: str, chapter_pattern: str) -> None:
     job = BREAKDOWN_JOBS[job_id]
+    result: dict[str, Any] | None = None
     try:
         result = analyze_novel(raw, Path(file_name).name, chapter_pattern)
+        analysis_id = str(uuid4())
+        result["analysisId"] = analysis_id
+        root = get_settings().global_root / "breakdowns" / analysis_id
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "source.txt").write_bytes(raw)
+
+        def checkpoint(update: dict[str, Any]) -> None:
+            result.update(update)
+            result["status"] = "partial"
+            (root / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
         chapter_chunks = reference_chapter_chunks(raw, result)
         _report_breakdown_job(job_id, f"已识别前 {len(result['selectedChapters'])} 章，分为 {len(chapter_chunks)} 个分析块。")
         enhanced, analysis_error = await _analyze_reference_with_ai(
             result=result,
             chapter_chunks=chapter_chunks,
             progress=lambda content: _report_breakdown_job(job_id, content),
+            checkpoint=checkpoint,
         )
         if not enhanced:
             raise RuntimeError(analysis_error or "AI 拆书分析不可用：请确认 Coomi 模型已配置、网络可用，并稍后重试。")
@@ -252,26 +283,60 @@ async def _run_breakdown_job(job_id: str, raw: bytes, file_name: str, chapter_pa
         result["styleProfile"] = enhanced["styleProfile"]
         result["referenceRhythm"] = enhanced["referenceRhythm"]
         result["analysisMode"] = "ai_reference_analysis"
-        analysis_id = str(uuid4())
-        result["analysisId"] = analysis_id
-        root = get_settings().global_root / "breakdowns" / analysis_id
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "source.txt").write_bytes(raw)
+        result["status"] = "completed"
         (root / "analysis.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         job["result"] = result
         job["status"] = "completed"
         _report_breakdown_job(job_id, "拆书研究完成，章节卡、节奏档案、母卡和风格研究已保存。")
     except Exception as exc:
-        job["status"] = "failed"
         job["error"] = str(exc) or "AI 拆书分析失败，请重试。"
+        if result and any(str(card.get("status") or "") == "AI 已分析" for card in result.get("studyCards", []) if isinstance(card, dict)):
+            result["status"] = "partial"
+            result.setdefault("warnings", []).append(f"已保留可继续的中间研究：{job['error']}")
+            analysis_path = get_settings().global_root / "breakdowns" / str(result["analysisId"]) / "analysis.json"
+            analysis_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            job["result"] = result
+            job["status"] = "partial"
+        else:
+            job["status"] = "failed"
+        _report_breakdown_job(job_id, job["error"])
+
+
+async def _run_rhythm_retry_job(job_id: str, analysis_path: Path, analysis: dict[str, Any]) -> None:
+    job = BREAKDOWN_JOBS[job_id]
+    try:
+        source_text = decode_novel((analysis_path.parent / "source.txt").read_bytes()).text
+        report = lambda content: _report_breakdown_job(job_id, content)
+        report("拆书规划 Agent 正在根据已保存的十张章节研究卡生成节奏档案。")
+        rhythm = await get_breakdown_planning_agent().build_reference_rhythm(analysis["studyCards"])
+        overlap = _reference_content_overlap(rhythm, source_text)
+        if overlap:
+            report("节奏档案命中参考书短语，正在进行安全改写。")
+            rhythm = await get_breakdown_planning_agent().sanitize_reference_rhythm(rhythm, [overlap])
+            _redact_reference_content(rhythm, source_text)
+        if not rhythm or _reference_content_overlap(rhythm, source_text):
+            raise RuntimeError("AI 节奏档案无法完成安全脱敏。")
+        analysis["referenceRhythm"] = rhythm
+        analysis["status"] = "completed"
+        analysis["analysisMode"] = "ai_reference_analysis"
+        analysis_path.write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+        job["result"] = analysis
+        job["status"] = "completed"
+        report("逐章节奏档案已完成并关联到保存的拆书记录。")
+    except Exception as exc:
+        job["status"] = "partial"
+        job["result"] = analysis
+        job["error"] = str(exc) or "逐章节奏档案继续失败。"
         _report_breakdown_job(job_id, job["error"])
 
 
 async def _analyze_reference_with_ai(
-    *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]], progress: ProgressReporter | None = None
+    *, result: dict[str, Any], chapter_chunks: list[dict[str, Any]], progress: ProgressReporter | None = None,
+    checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any] | None, str]:
     """Analyze complete first-ten chapters through chunk extraction then aggregation."""
     report = progress or (lambda _content: None)
+    save = checkpoint or (lambda _update: None)
     try:
         report("拆书规划 Agent 正在逐块提炼章节事实。")
         chunk_analyses = await _analyze_chunks_with_ai(chapter_chunks, progress=report)
@@ -286,6 +351,7 @@ async def _analyze_reference_with_ai(
         return None, "AI 章节研究卡生成超时：请稍后重试。"
     except Exception:
         return None, "AI 章节研究卡生成失败：请确认模型服务可用后重试。"
+    save({"studyCards": study_cards})
     try:
         report("章节研究卡已完成，正在提炼母卡与写作风格。")
         materials = await _build_mother_cards_and_style_with_ai(study_cards)
@@ -295,6 +361,7 @@ async def _analyze_reference_with_ai(
         return None, "AI 母卡与风格汇总失败：请确认模型服务可用后重试。"
     if not materials:
         return None, "AI 返回的母卡或风格结构不完整，请重试。"
+    save(materials)
     try:
         report("母卡与风格研究已完成，正在生成逐章节奏档案。")
         reference_rhythm = await get_breakdown_planning_agent().build_reference_rhythm(study_cards)

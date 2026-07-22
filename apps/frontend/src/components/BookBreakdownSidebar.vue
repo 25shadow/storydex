@@ -37,6 +37,9 @@
         <div v-if="result.warnings.length" class="breakdown-warnings">
           <div v-for="warning in result.warnings" :key="warning"><span class="material-symbols-rounded">info</span>{{ warning }}</div>
         </div>
+        <button v-if="result.status === 'partial'" class="breakdown-primary" type="button" :disabled="loading" @click="resumeRhythm">
+          <span class="material-symbols-rounded">resume</span>继续生成逐章节奏档案
+        </button>
         <div class="breakdown-section-title">前 {{ result.referenceChapterLimit }} 章研究范围</div>
         <ol class="breakdown-chapters">
           <li v-for="chapter in result.selectedChapters" :key="chapter.index">
@@ -117,7 +120,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import axios from "axios";
-import { analyzeBreakdown, fetchBreakdown, fetchBreakdownJob, generateNewBookIdeas, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { analyzeBreakdown, fetchBreakdown, fetchBreakdownJob, generateNewBookIdeas, retryBreakdownRhythm, selectNewBookIdea, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useBreakdownAgentStore } from "@/stores/breakdownAgent";
 
@@ -170,7 +173,11 @@ async function startAnalysis(): Promise<void> {
     const analysis = await waitForBreakdownJob(response.data.jobId);
     result.value = analysis;
     selectedMotherCardIds.value = analysis.motherCards.map((card) => card.id);
-    breakdownAgentStore.finish(`前十章研究完成，已生成 ${analysis.studyCards.length} 张章节研究卡和逐章节奏档案。`);
+    if (analysis.status === "partial") {
+      breakdownAgentStore.fail("章节研究已保存，逐章节奏档案可继续生成。");
+    } else {
+      breakdownAgentStore.finish(`前十章研究完成，已生成 ${analysis.studyCards.length} 张章节研究卡和逐章节奏档案。`);
+    }
   } catch (error) {
     errorMessage.value = axios.isAxiosError(error)
       ? String(error.response?.data?.error?.message || error.response?.data?.detail || "AI 拆书分析失败，请重试。")
@@ -187,9 +194,27 @@ async function waitForBreakdownJob(jobId: string): Promise<BreakdownResult> {
       breakdownAgentStore.report(event.content);
     }
     displayedEventCount = job.data.events.length;
-    if (job.data.status === "completed" && job.data.result) return job.data.result;
+    if ((job.data.status === "completed" || job.data.status === "partial") && job.data.result) return job.data.result;
     if (job.data.status === "failed") throw new Error(job.data.error || "AI 拆书分析失败，请重试。");
     await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+  }
+}
+async function resumeRhythm(): Promise<void> {
+  if (!result.value || loading.value) return;
+  loading.value = true;
+  errorMessage.value = "";
+  breakdownAgentStore.start("拆书规划 Agent", "已读取保存的章节研究，继续生成逐章节奏档案。");
+  try {
+    const response = await retryBreakdownRhythm(result.value.analysisId);
+    const analysis = await waitForBreakdownJob(response.data.jobId);
+    result.value = analysis;
+    if (analysis.status === "partial") breakdownAgentStore.fail("节奏档案暂未完成，可再次继续，不会重跑章节研究。");
+    else breakdownAgentStore.finish("逐章节奏档案已完成，拆书记录已更新。");
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "继续节奏档案失败。";
+    breakdownAgentStore.fail(errorMessage.value);
+  } finally {
+    loading.value = false;
   }
 }
 async function generateIdeas(): Promise<void> {
