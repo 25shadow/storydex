@@ -153,7 +153,7 @@ async def _analyze_reference_with_ai(
             system="你是专业小说编辑和拆书研究员。严格区分结构规律与原书具体内容，不生成改写或复述。",
             prompt=prompt,
             purpose="breakdown_reference_analysis",
-            timeout=90,
+            timeout=180,
         )
         payload = _extract_json_object(str(getattr(response, "content", "") or ""))
         normalized = _normalize_reference_analysis(payload, result)
@@ -161,7 +161,7 @@ async def _analyze_reference_with_ai(
             return normalized, ""
         return None, "AI 返回的拆书结构不完整，请重试。"
     except asyncio.TimeoutError:
-        return None, "AI 拆书分析超时：前十章结构较长，请稍后重试。"
+        return None, "AI 拆书汇总超时：模型在 180 秒内未完成十章研究卡，请稍后重试。"
     except Exception:
         return None, "AI 拆书分析失败：请确认模型服务可用后重试。"
 
