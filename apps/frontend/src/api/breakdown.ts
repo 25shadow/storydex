@@ -108,3 +108,8 @@ export async function fetchBreakdownHistory(): Promise<ApiResult<{ items: Breakd
   const response = await apiClient.get<ApiEnvelope<{ items: BreakdownHistoryItem[] }>>("/breakdown/history");
   return unwrapEnvelope(response.data, "拆书历史加载失败。");
 }
+
+export async function fetchBreakdown(analysisId: string): Promise<ApiResult<BreakdownResult>> {
+  const response = await apiClient.get<ApiEnvelope<BreakdownResult>>(`/breakdown/${encodeURIComponent(analysisId)}`);
+  return unwrapEnvelope(response.data, "拆书记录加载失败。");
+}

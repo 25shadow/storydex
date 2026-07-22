@@ -12,12 +12,14 @@
     <div v-else-if="items.length === 0" class="history-state">完成一次 AI 拆书后，记录会显示在这里。</div>
     <ol v-else class="history-list">
       <li v-for="item in items" :key="item.analysisId">
-        <span class="material-symbols-rounded">auto_stories</span>
-        <div>
-          <strong>{{ item.fileName }}</strong>
-          <small>研究前 {{ item.selectedChapterCount }} 章 · 共 {{ item.chapterCount }} 章</small>
-          <time>{{ formatTime(item.updatedAt) }}</time>
-        </div>
+        <button type="button" :class="{ active: uiStore.breakdownLoadId === item.analysisId }" @click="loadBreakdown(item.analysisId)">
+          <span class="material-symbols-rounded">auto_stories</span>
+          <div>
+            <strong>{{ item.fileName }}</strong>
+            <small>研究前 {{ item.selectedChapterCount }} 章 · 共 {{ item.chapterCount }} 章</small>
+            <time>{{ formatTime(item.updatedAt) }}</time>
+          </div>
+        </button>
       </li>
     </ol>
     <section class="history-note">
@@ -30,10 +32,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { fetchBreakdownHistory, type BreakdownHistoryItem } from "@/api/breakdown";
+import { useUiStore } from "@/stores/ui";
 
 const items = ref<BreakdownHistoryItem[]>([]);
 const loading = ref(false);
 const errorMessage = ref("");
+const uiStore = useUiStore();
 
 async function loadHistory(): Promise<void> {
   loading.value = true;
@@ -46,6 +50,10 @@ async function loadHistory(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+function loadBreakdown(analysisId: string): void {
+  uiStore.requestBreakdownLoad(analysisId);
 }
 
 function formatTime(value: number): string {
@@ -64,7 +72,9 @@ button { border: 0; background: transparent; color: var(--text-muted); cursor: p
 .history-state { padding: 20px 18px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
 .history-state.is-error { color: var(--danger); }
 .history-list { margin: 0; padding: 0; overflow: auto; list-style: none; }
-.history-list li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 13px 16px; border-bottom: 1px solid var(--border-subtle); }
+.history-list li { border-bottom: 1px solid var(--border-subtle); }
+.history-list li > button { display: grid; grid-template-columns: 22px 1fr; width: 100%; gap: 8px; padding: 13px 16px; color: inherit; text-align: left; }
+.history-list li > button:hover, .history-list li > button.active { background: var(--accent-soft); }
 .history-list .material-symbols-rounded { color: var(--accent); font-size: 18px; }
 .history-list strong, .history-list small, .history-list time { display: block; }
 .history-list strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

@@ -95,9 +95,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import axios from "axios";
-import { analyzeBreakdown, generateNewBookIdeas, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
+import { useUiStore } from "@/stores/ui";
 import { useWorkspaceStore } from "@/stores/workspace";
 
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -114,6 +115,7 @@ const ideaLoading = ref(false);
 const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
 const workspaceStore = useWorkspaceStore();
+const uiStore = useUiStore();
 const projectName = computed(() => workspaceStore.currentProject?.projectName || "当前 Storydex 项目");
 
 function choose(file: File | undefined): void {
@@ -167,6 +169,29 @@ async function generateIdeas(): Promise<void> {
   }
   finally { ideaLoading.value = false; }
 }
+async function loadSavedBreakdown(analysisId: string): Promise<void> {
+  if (!analysisId || result.value?.analysisId === analysisId) return;
+  loading.value = true;
+  errorMessage.value = "";
+  ideaResult.value = null;
+  ideaError.value = "";
+  activeStudyCardId.value = "";
+  activeMotherCardId.value = "";
+  activeIdeaId.value = "";
+  try {
+    const response = await fetchBreakdown(analysisId);
+    result.value = response.data;
+    selectedFile.value = null;
+    selectedMotherCardIds.value = response.data.motherCards.map((card) => card.id);
+  } catch (error) {
+    errorMessage.value = axios.isAxiosError(error)
+      ? String(error.response?.data?.error?.message || error.response?.data?.detail || "拆书记录加载失败。")
+      : error instanceof Error ? error.message : "拆书记录加载失败。";
+  } finally {
+    loading.value = false;
+  }
+}
+watch(() => uiStore.breakdownLoadId, (analysisId) => { void loadSavedBreakdown(analysisId); });
 function toggleStudyCard(id: string): void { activeStudyCardId.value = activeStudyCardId.value === id ? "" : id; }
 function toggleIdea(id: string): void { activeIdeaId.value = activeIdeaId.value === id ? "" : id; }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }

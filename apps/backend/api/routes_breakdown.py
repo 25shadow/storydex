@@ -69,6 +69,26 @@ def breakdown_history(request: Request) -> dict[str, Any]:
     ).model_dump(by_alias=True)
 
 
+@router.get("/breakdown/{analysis_id}")
+def breakdown_detail(analysis_id: str, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", analysis_id):
+        raise HTTPException(status_code=400, detail="拆书记录标识无效。")
+    analysis_path = get_settings().global_root / "breakdowns" / analysis_id / "analysis.json"
+    try:
+        result = json.loads(analysis_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到这条拆书记录。") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="拆书记录无法读取。") from exc
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=500, detail="拆书记录格式无效。")
+    return success_response(
+        data=result,
+        trace=ApiTrace(traceId=request.headers.get("x-trace-id") or str(uuid4())),
+        audit=[{"action": "read_breakdown", "analysisId": analysis_id}],
+    ).model_dump(by_alias=True)
+
+
 @router.post("/breakdown/analyze")
 async def breakdown_analyze(payload: BreakdownRequest, request: Request) -> dict[str, Any]:
     try:

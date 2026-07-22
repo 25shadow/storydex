@@ -17,6 +17,7 @@ interface UiState {
   fileFontSize: number;
   playerFontSize: number;
   systemSettingsOpen: boolean;
+  breakdownLoadId: string;
 }
 
 const DEFAULT_WORKBENCH_MODE: WorkbenchMode = "storydex";
@@ -39,7 +40,8 @@ export const useUiStore = defineStore("ui", {
     agentWidth: DEFAULT_AGENT_WIDTH,
     fileFontSize: DEFAULT_FILE_FONT_SIZE,
     playerFontSize: DEFAULT_PLAYER_FONT_SIZE,
-    systemSettingsOpen: false
+    systemSettingsOpen: false,
+    breakdownLoadId: ""
   }),
   actions: {
     applyPersistedState(payload?: Partial<UIPreferencesResponse> | null): void {
@@ -115,6 +117,10 @@ export const useUiStore = defineStore("ui", {
 
     setSystemSettingsOpen(open: boolean): void {
       this.systemSettingsOpen = open;
+    },
+
+    requestBreakdownLoad(analysisId: string): void {
+      this.breakdownLoadId = String(analysisId || "").trim();
     },
 
     schedulePersist(): void {
