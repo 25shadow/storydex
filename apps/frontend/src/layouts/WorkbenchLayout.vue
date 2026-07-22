@@ -16,7 +16,8 @@
         ></div>
       </template>
 
-      <EditorPane v-if="!relationshipGraphMode" />
+      <BookBreakdownSidebar v-if="showBreakdownWorkspace" class="breakdown-workspace" :analysis-id="uiStore.breakdownLoadId" />
+      <EditorPane v-else-if="!relationshipGraphMode" />
       <div v-else-if="workspaceStore.launchScreenVisible" class="storydex-relationship-empty">
         先打开一个 Storydex 项目，再查看知识图谱和WIKI。
       </div>
@@ -34,8 +35,7 @@
         title="拖动调整 Agent 栏宽度"
         @pointerdown="startResize('agent', $event)"
       ></div>
-      <BreakdownHistoryPanel v-if="showBreakdownHistory" />
-      <AgentPanel v-else-if="showAgentPanel" />
+      <AgentPanel v-if="showAgentPanel" />
     </div>
 
     <StatusBar />
@@ -78,9 +78,9 @@ const MIN_AGENT_WIDTH = 320;
 
 const relationshipGraphMode = computed(() => uiStore.activeActivity === "relationships");
 const showStorydexSidebar = computed(() => !uiStore.sidebarCollapsed && !relationshipGraphMode.value);
-const showBreakdownHistory = computed(() => uiStore.activeActivity === "breakdown");
-const showAgentPanel = computed(() => !showBreakdownHistory.value && !uiStore.agentCollapsed && !workspaceStore.launchScreenVisible);
-const showAuxPanel = computed(() => showBreakdownHistory.value || showAgentPanel.value);
+const showBreakdownWorkspace = computed(() => uiStore.activeActivity === "breakdown");
+const showAgentPanel = computed(() => !uiStore.agentCollapsed && !workspaceStore.launchScreenVisible);
+const showAuxPanel = computed(() => showAgentPanel.value);
 const sidebarComponent = computed(() => {
   if (uiStore.activeActivity === "source-control") {
     return SourceControlSidebar;
@@ -92,7 +92,7 @@ const sidebarComponent = computed(() => {
     return PromptRepositorySidebar;
   }
   if (uiStore.activeActivity === "breakdown") {
-    return BookBreakdownSidebar;
+    return BreakdownHistoryPanel;
   }
   return ExplorerSidebar;
 });
@@ -216,6 +216,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 .storydex-sidebar-shell :deep(.breakdown-panel) {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.storydex-sidebar-shell :deep(.breakdown-history-panel),
+.breakdown-workspace {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;

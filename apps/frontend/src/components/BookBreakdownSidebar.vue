@@ -25,6 +25,7 @@
       <button class="breakdown-primary" type="button" :disabled="!selectedFile || loading" @click="startAnalysis">
         <span class="material-symbols-rounded">play_arrow</span>{{ loading ? "正在建立章节骨架..." : "开始拆书" }}
       </button>
+      <p v-if="loading && !selectedFile" class="breakdown-muted">正在加载拆书记录...</p>
       <p v-if="errorMessage" class="breakdown-error">{{ errorMessage }}</p>
 
       <section v-if="result" class="breakdown-result">
@@ -98,8 +99,9 @@
 import { computed, ref, watch } from "vue";
 import axios from "axios";
 import { analyzeBreakdown, fetchBreakdown, generateNewBookIdeas, type BreakdownResult, type IdeaGenerationResult } from "@/api/breakdown";
-import { useUiStore } from "@/stores/ui";
 import { useWorkspaceStore } from "@/stores/workspace";
+
+const props = defineProps<{ analysisId?: string }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const selectedFile = ref<File | null>(null);
@@ -115,7 +117,6 @@ const ideaLoading = ref(false);
 const ideaError = ref("");
 const ideaResult = ref<IdeaGenerationResult | null>(null);
 const workspaceStore = useWorkspaceStore();
-const uiStore = useUiStore();
 const projectName = computed(() => workspaceStore.currentProject?.projectName || "当前 Storydex 项目");
 
 function choose(file: File | undefined): void {
@@ -191,7 +192,7 @@ async function loadSavedBreakdown(analysisId: string): Promise<void> {
     loading.value = false;
   }
 }
-watch(() => uiStore.breakdownLoadId, (analysisId) => { void loadSavedBreakdown(analysisId); });
+watch(() => props.analysisId, (analysisId) => { void loadSavedBreakdown(analysisId || ""); }, { immediate: true });
 function toggleStudyCard(id: string): void { activeStudyCardId.value = activeStudyCardId.value === id ? "" : id; }
 function toggleIdea(id: string): void { activeIdeaId.value = activeIdeaId.value === id ? "" : id; }
 function formatBytes(bytes: number): string { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
